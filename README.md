@@ -347,11 +347,13 @@ Track live progress on our [GitHub Project Board](https://github.com/your-org/an
 
 | Name     | Role                            | Focus Area                            |
 | -------- | ------------------------------- | ------------------------------------- |
-| Kushal   |                                 |                                       |
-| Vaibhav  |                                 |                                       |
-| Jaswanth |                                 |                                       |
-| Yogya    |                                 |                                       |
-| Tanuj    |                                 |                                       |
+| Kushal   | Lead                            | Self-healing core, serving, demo      |
+| Vaibhav  | Senior                          | Data, features, models                |
+| Jaswanth | Senior                          | Streaming, feature store, MLOps       |
+| Yogya    | Junior                          | Data loaders, pollers, dashboards     |
+| Tanuj    | Junior                          | Webhooks, replay, alerts, demo video  |
+
+See [`docs/TEAM_PLAN.md`](docs/TEAM_PLAN.md) for who owns which chunk.
 
 ---
 
