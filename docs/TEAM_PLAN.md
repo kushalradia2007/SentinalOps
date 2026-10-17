@@ -12,6 +12,61 @@ Chunk numbers match `docs/ROADMAP.md`. Chunks 1–6 (foundation) are done.
 | **Yogya** | Junior | Data loading, pollers, dashboards, docs (mentored) | 8, 13, 16, 36, 41, 48 |
 | **Tanuj** | Junior | Webhooks, replay, alert rules, demo video (mentored) | 17, 18, 21, 40, 50 |
 
+## Full assignment table
+
+| # | Chunk | Phase | Owner | Mentor | Status |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Repo skeleton, packaging, docker-compose, domain config | Foundation | **Kushal** | — | done |
+| 2 | Feature extractors (AST, entropy, base64, metadata) | Foundation | **Kushal** | — | done |
+| 3 | Zero-day simulator, synthetic data, champion model, thesis test | Foundation | **Kushal** | — | done |
+| 4 | Config loader, structured logging, shared pydantic schemas | Foundation | **Kushal** | — | done |
+| 5 | CI: ruff, pytest, GitHub Actions | Foundation | **Kushal** | — | done |
+| 6 | Full docker compose stack comes up healthy | Foundation | **Kushal** | — | done |
+| 7 | MalwareBench download and ingest | Data | **Vaibhav** | — | todo |
+| 8 | QUT-DV25 loader | Data | **Yogya** | Vaibhav | todo |
+| 9 | Safe package fetcher (PyPI sdist/wheel, static unpack only, never executes) | Data | **Vaibhav** | — | todo |
+| 10 | npm tarball fetcher plus JS feature extractor (postinstall, eval) | Data | **Vaibhav** | — | todo |
+| 11 | Metadata enrichment: maintainer age, email-domain change, dependency depth | Data | **Jaswanth** | — | todo |
+| 12 | Real-feature pipeline to Parquet offline store | Data | **Vaibhav** | — | todo |
+| 13 | Dataset QA: dedup, leakage checks, temporal split | Data | **Yogya** | Vaibhav | todo |
+| 14 | Install-time behavior features (syscalls, network, file writes) | Data | **Vaibhav** | — | todo |
+| 15 | Redpanda topics and event schemas | Streaming | **Jaswanth** | — | todo |
+| 16 | PyPI live poller to raw topic | Streaming | **Yogya** | Jaswanth | todo |
+| 17 | npm registry feed poller | Streaming | **Tanuj** | Jaswanth | todo |
+| 18 | GitHub webhook receiver | Streaming | **Tanuj** | Jaswanth | todo |
+| 19 | Faust processor: fetch, extract, publish features | Streaming | **Jaswanth** | — | todo |
+| 20 | Dead-letter queue, retries, idempotency, backpressure | Streaming | **Jaswanth** | — | todo |
+| 21 | Replay simulator with speed control | Streaming | **Tanuj** | Jaswanth | todo |
+| 22 | Feast repo: entities, feature views, offline store | Feature store | **Jaswanth** | — | todo |
+| 23 | Redis online materialization | Feature store | **Jaswanth** | — | todo |
+| 24 | Point-in-time-correct training sets | Feature store | **Vaibhav** | — | todo |
+| 25 | Online/offline consistency test | Feature store | **Vaibhav** | — | todo |
+| 26 | Real-data champion (GBM) plus metrics suite (PR-AUC, recall@FPR) | Models | **Vaibhav** | — | todo |
+| 27 | Classic detectors: IsolationForest, PyOD (ECOD/COPOD) | Models | **Vaibhav** | — | todo |
+| 28 | PyTorch autoencoder | Models | **Kushal** | — | todo |
+| 29 | Streaming learners (River/PySAD) | Models | **Jaswanth** | — | todo |
+| 30 | Comparison harness and MLflow experiments | Models | **Kushal** | — | todo |
+| 31 | Calibration and cost-sensitive threshold selection | Models | **Kushal** | — | todo |
+| 32 | MLflow registry: champion/challenger aliases | Models | **Jaswanth** | — | todo |
+| 33 | /score with feature-store lookup and alias hot-reload | Serving | **Kushal** | — | todo |
+| 34 | /labels endpoint, label store, prediction-label join | Serving | **Kushal** | — | todo |
+| 35 | Block policy, allowlist, SHAP explanations | Serving | **Vaibhav** | — | todo |
+| 36 | Load testing and p99 latency targets | Serving | **Yogya** | Kushal | todo |
+| 37 | Prometheus metrics: scores, latency, throughput | Monitoring | **Jaswanth** | — | todo |
+| 38 | Evidently drift jobs (feature and prediction drift) | Monitoring | **Kushal** | — | todo |
+| 39 | Delayed-label rolling recall/precision | Monitoring | **Kushal** | — | todo |
+| 40 | Alert rules (model_drift_high) | Monitoring | **Tanuj** | Kushal | todo |
+| 41 | Grafana dashboards and "Model Healed" annotations | Monitoring | **Yogya** | Kushal | todo |
+| 42 | Prefect flow with drift plus label trigger | Self-healing | **Kushal** | — | todo |
+| 43 | Retrain DAG: 48h window plus replay buffer against forgetting | Self-healing | **Kushal** | — | todo |
+| 44 | Challenger vs champion gates (gain on new attacks, no regression on old) | Self-healing | **Kushal** | — | todo |
+| 45 | Auto-promotion and rollback safety | Self-healing | **Kushal** | — | todo |
+| 46 | Harmless adversarial variant library (dependency confusion, compromised maintainer, staged payload) | Self-healing | **Vaibhav** | — | todo |
+| 47 | End-to-end 5-step zero-day demo with GitHub test repo | Demo and polish | **Kushal** | — | todo |
+| 48 | Docs: architecture diagram, runbook, ADRs | Demo and polish | **Yogya** | Kushal | todo |
+| 49 | Benchmarks and results writeup (heal time, before/after) | Demo and polish | **Vaibhav** | — | todo |
+| 50 | Demo video, resume bullets, v1.0 release | Demo and polish | **Tanuj** | Kushal | todo |
+
 ## Mentoring (juniors never work alone on a chunk)
 
 | Chunk | Owner | Mentor / reviewer |
