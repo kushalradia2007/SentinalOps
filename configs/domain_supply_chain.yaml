@@ -1,0 +1,17 @@
+# Per-domain config. New domains = new file like this + a feature module.
+domain: software_supply_chain
+thesis: >
+  Adversarial concept drift in open-source ecosystems: detect malicious
+  packages in real time and autonomously heal the model when attackers
+  invent new evasion tactics.
+sources:
+  offline: [MalwareBench, QUT-DV25]
+  live: [pypi_json_api, npm_registry, github_webhook]
+  delayed_labels: [osv_dev, reversinglabs_ioc, simulated_labels_endpoint]
+features_module: sentinalops.features.extract
+drift_watch: [base64_entropy, maintainer_age_days, max_file_entropy]
+drift_threshold: 0.3        # Evidently drift share that triggers retraining
+retrain_window_hours: 48
+promotion_metric: avg_precision
+block_threshold: 0.5
+label_delay_minutes: 60

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinalops"
+version = "0.1.0"
+description = "Self-healing streaming ML platform for software supply chain security"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy", "pandas", "scikit-learn", "joblib", "pyyaml",
+  "fastapi", "uvicorn[standard]", "pydantic", "prometheus-client",
+]
+
+[project.optional-dependencies]
+stream = ["faust-streaming", "aiokafka", "httpx"]
+mlops = ["mlflow", "evidently", "prefect", "feast[redis]"]
+dev = ["pytest", "ruff", "httpx"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
