@@ -1,5 +1,7 @@
 # SentinalOps Roadmap: 50 chunks
 
+Every chunk from 10 onward is split into small tasks in [`TASKS.md`](TASKS.md). Owners are in [`TEAM_PLAN.md`](TEAM_PLAN.md).
+
 Domain: software supply chain security. Thesis: detect malicious packages in real time, and self-heal when attackers change tactics.
 
 ## Phase A: Foundation

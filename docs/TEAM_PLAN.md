@@ -1,6 +1,6 @@
 # Team Plan
 
-Chunk numbers match `docs/ROADMAP.md`. Chunks 1–6 (foundation) are done.
+Chunk numbers match `docs/ROADMAP.md`. Chunks 1–9 are done. Day-to-day work is tracked in [`TASKS.md`](TASKS.md): every remaining chunk is split into small tasks (about 1–4 hours each), with an owner, size, dependencies and a "done when" check.
 
 ## Roles
 
