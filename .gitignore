@@ -7,3 +7,5 @@ mlruns/
 .venv/
 *.egg-info/
 .pytest_cache/
+data/raw/
+data/processed/

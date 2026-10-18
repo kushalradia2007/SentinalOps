@@ -9,7 +9,7 @@ description = "Self-healing streaming ML platform for software supply chain secu
 requires-python = ">=3.11"
 dependencies = [
   "numpy", "pandas", "scikit-learn", "joblib", "pyyaml",
-  "fastapi", "uvicorn[standard]", "pydantic", "prometheus-client",
+  "fastapi", "uvicorn[standard]", "pydantic", "prometheus-client", "pyarrow",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +23,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["network: hits the real network (set RUN_NETWORK_TESTS=1)"]
 
 [tool.ruff]
 line-length = 110

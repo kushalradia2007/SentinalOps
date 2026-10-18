@@ -11,9 +11,9 @@ Domain: software supply chain security. Thesis: detect malicious packages in rea
 - [x] 6. Full docker compose stack comes up healthy **[Kushal]**
 
 ## Phase B: Data
-- [ ] 7. MalwareBench download and ingest **[Vaibhav]**
-- [ ] 8. QUT-DV25 loader **[Yogya, mentor Vaibhav]**
-- [ ] 9. Safe package fetcher (PyPI sdist/wheel, static unpack only, never executes) **[Vaibhav]**
+- [x] 7. MalwareBench download and ingest **[Vaibhav]**
+- [x] 8. QUT-DV25 loader **[Yogya, mentor Vaibhav]**
+- [x] 9. Safe package fetcher (PyPI sdist/wheel, static unpack only, never executes) **[Vaibhav]**
 - [ ] 10. npm tarball fetcher plus JS feature extractor (postinstall, eval) **[Vaibhav]**
 - [ ] 11. Metadata enrichment: maintainer age, email-domain change, dependency depth **[Jaswanth]**
 - [ ] 12. Real-feature pipeline to Parquet offline store **[Vaibhav]**

@@ -22,9 +22,9 @@ Chunk numbers match `docs/ROADMAP.md`. Chunks 1–6 (foundation) are done.
 | 4 | Config loader, structured logging, shared pydantic schemas | Foundation | **Kushal** | — | done |
 | 5 | CI: ruff, pytest, GitHub Actions | Foundation | **Kushal** | — | done |
 | 6 | Full docker compose stack comes up healthy | Foundation | **Kushal** | — | done |
-| 7 | MalwareBench download and ingest | Data | **Vaibhav** | — | todo |
-| 8 | QUT-DV25 loader | Data | **Yogya** | Vaibhav | todo |
-| 9 | Safe package fetcher (PyPI sdist/wheel, static unpack only, never executes) | Data | **Vaibhav** | — | todo |
+| 7 | MalwareBench download and ingest | Data | **Vaibhav** | — | done |
+| 8 | QUT-DV25 loader | Data | **Yogya** | Vaibhav | done |
+| 9 | Safe package fetcher (PyPI sdist/wheel, static unpack only, never executes) | Data | **Vaibhav** | — | done |
 | 10 | npm tarball fetcher plus JS feature extractor (postinstall, eval) | Data | **Vaibhav** | — | todo |
 | 11 | Metadata enrichment: maintainer age, email-domain change, dependency depth | Data | **Jaswanth** | — | todo |
 | 12 | Real-feature pipeline to Parquet offline store | Data | **Vaibhav** | — | todo |

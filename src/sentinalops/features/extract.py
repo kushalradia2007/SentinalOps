@@ -95,6 +95,23 @@ def metadata_features(meta: dict) -> dict:
     }
 
 
+_HOOK_COMMANDS = r"install|develop|egg_info|build_py|build_ext|bdist_wheel|sdist"
+_CMDCLASS_RE = re.compile(rf"cmdclass[^{{]*\{{[^}}]*['\"](?:{_HOOK_COMMANDS})['\"]", re.S)
+_HOOK_CLASS_RE = re.compile(rf"class\s+\w+\(\s*(?:\w+\.)*(?:{_HOOK_COMMANDS})\s*\)")
+
+
+def _has_install_hook(setup_py: str) -> bool:
+    """True when setup.py overrides a build/install command (code runs at pip install time).
+
+    A custom *test* command (e.g. requests) is not an install hook, so a bare `cmdclass` is not enough.
+    """
+    return bool(
+        _CMDCLASS_RE.search(setup_py)
+        or _HOOK_CLASS_RE.search(setup_py)
+        or "postinstall" in setup_py.lower()
+    )
+
+
 def extract_package_features(files: dict[str, str], meta: dict) -> dict:
     """files: {relative_path: text}. meta: registry metadata incl. 'name'."""
     feats = {"n_exec_eval": 0, "n_os_system": 0, "n_subprocess": 0, "n_network": 0}
@@ -108,7 +125,7 @@ def extract_package_features(files: dict[str, str], meta: dict) -> dict:
         b64_ent, b64_ratio = max(b64_ent, bf["base64_entropy"]), max(b64_ratio, bf["base64_blob_ratio"])
     setup = files.get("setup.py", "")
     feats.update(
-        has_install_hook=int("cmdclass" in setup or "postinstall" in setup.lower()),
+        has_install_hook=int(_has_install_hook(setup)),
         max_file_entropy=max_ent,
         base64_entropy=b64_ent,
         base64_blob_ratio=b64_ratio,
