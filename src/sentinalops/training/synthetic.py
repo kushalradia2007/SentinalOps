@@ -56,4 +56,4 @@ def make_dataset(
     rng = np.random.default_rng(seed)
     mal = {"classic": _classic_malware, "zero_day": _zero_day_malware}[regime](n_mal, rng)
     df = pd.concat([_benign(n_benign, rng).assign(label=0), mal.assign(label=1)], ignore_index=True)
-    return df[FEATURE_ORDER + ["label"]].sample(frac=1, random_state=seed).reset_index(drop=True)
+    return df[[*FEATURE_ORDER, "label"]].sample(frac=1, random_state=seed).reset_index(drop=True)

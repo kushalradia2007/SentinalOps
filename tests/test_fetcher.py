@@ -215,3 +215,19 @@ def test_live_pypi_requests():
     pkg = fetch_pypi_package("requests", "2.31.0")
     feats = extract_package_features(pkg.files, pkg.meta)
     assert "setup.py" in pkg.files and feats["typosquat_score"] == 0.0
+
+
+# ---- redirect guard
+def test_redirect_to_foreign_host_blocked():
+    import urllib.request
+
+    from sentinalops.data.fetcher import _AllowedRedirects, default_http_get
+    h = _AllowedRedirects()
+    req = urllib.request.Request("https://pypi.org/pypi/x/json")
+    with pytest.raises(FetchError, match="refusing"):
+        h.redirect_request(req, None, 302, "Found", {}, "https://evil.example.com/x.tar.gz")
+    with pytest.raises(FetchError):  # plain http is refused too
+        h.redirect_request(req, None, 302, "Found", {}, "http://files.pythonhosted.org/x.tar.gz")
+    assert h.redirect_request(req, None, 302, "Found", {}, "https://files.pythonhosted.org/x.tar.gz")
+    with pytest.raises(FetchError):
+        default_http_get("https://evil.example.com/a", 10)

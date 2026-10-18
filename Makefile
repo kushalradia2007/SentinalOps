@@ -6,7 +6,7 @@ test:
 train:
 	python -m sentinalops.training.train_baseline
 api:
-	uvicorn sentinalops.serving.app:app --reload
+	uvicorn sentinalops.serving.app:create_app --factory --reload
 up:
 	docker compose up -d
 down:

@@ -46,8 +46,8 @@ def download_file(
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     req = urllib.request.Request(url, headers={"User-Agent": "sentinalops-data/0.1"})
-    h, total = hashlib.md5(), 0  # noqa: S324 - integrity check against published checksums only
-    with urllib.request.urlopen(req, timeout=timeout) as r, open(dest, "wb") as f:
+    h, total = hashlib.md5(), 0
+    with urllib.request.urlopen(req, timeout=timeout) as r, dest.open("wb") as f:
         while chunk := r.read(1 << 16):
             total += len(chunk)
             if total > max_bytes:

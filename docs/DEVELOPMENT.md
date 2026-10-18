@@ -5,7 +5,7 @@ pip install -e ".[dev]"
 make test                                   # pytest
 ruff check .                                # lint
 python -m sentinalops.training.train_baseline   # trains models/champion.joblib (synthetic data for now)
-uvicorn sentinalops.serving.app:app --reload     # API on :8000
+uvicorn sentinalops.serving.app:create_app --factory --reload     # API on :8000
 python scripts/smoke.py                          # scores benign + zero-day package, posts a label
 ```
 

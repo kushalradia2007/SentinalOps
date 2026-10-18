@@ -1,4 +1,5 @@
 import json
+import os
 
 import joblib
 import pytest
@@ -69,7 +70,6 @@ def test_hot_reload_picks_up_new_champion(tmp_path, champion):
     joblib.dump(champion, path)
     c = TestClient(create_app(Settings(model_path=path, data_dir=tmp_path)))
     v1 = c.post("/score", json=_body(benign_package())).json()["model_version"]
-    import os
     os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 10))
     v2 = c.post("/score", json=_body(benign_package())).json()["model_version"]
     assert v1 != v2

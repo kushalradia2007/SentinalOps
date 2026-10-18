@@ -60,13 +60,6 @@ class ScoreRequest(BaseModel):
         return v
 
 
-class ScoreResponse(BaseModel):
-    package: str
-    score: float
-    blocked: bool
-    model_version: str
-
-
 class LabelRequest(BaseModel):
     package: str
     is_malicious: bool

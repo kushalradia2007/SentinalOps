@@ -114,8 +114,6 @@ def unpack_archive(data: bytes, filename: str, limits: Limits = DEFAULT_LIMITS) 
     res = UnpackResult()
     raw: dict[str, str] = {}
     for path, _size, reader in members:
-        if len(raw) + len(res.skipped) >= limits.max_files:
-            raise UnsafeArchive(f"more than {limits.max_files} members")
         chunk = reader(limits.max_file_bytes + 1)
         res.total_bytes += len(chunk)
         if res.total_bytes > limits.max_total_bytes:
@@ -141,6 +139,11 @@ def _check_totals(declared: int, compressed: int, n: int, limits: Limits) -> Non
         raise UnsafeArchive(f"compression ratio {declared // max(compressed, 1)}:1 (zip bomb?)")
 
 
+def _read_zip(zf: zipfile.ZipFile, info: zipfile.ZipInfo, n: int) -> bytes:
+    with zf.open(info) as f:
+        return f.read(n)
+
+
 def _zip_members(data: bytes, limits: Limits):
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
@@ -153,7 +156,7 @@ def _zip_members(data: bytes, limits: Limits):
         path = safe_member_path(i.filename)
         if (i.external_attr >> 16) & 0o170000 == 0o120000:  # symlink
             continue
-        out.append((path, i.file_size, lambda n, i=i: zf.open(i).read(n)))
+        out.append((path, i.file_size, lambda n, i=i: _read_zip(zf, i, n)))
     return out
 
 
@@ -185,11 +188,19 @@ def _check_url(url: str) -> None:
         raise FetchError(f"refusing to fetch {url!r}: only https to {sorted(ALLOWED_HOSTS)}")
 
 
+class _AllowedRedirects(urllib.request.HTTPRedirectHandler):
+    """Re-apply the host allowlist to every redirect hop, not just the first URL."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def default_http_get(url: str, max_bytes: int, timeout: int = 30) -> bytes:
     _check_url(url)
     req = urllib.request.Request(url, headers={"User-Agent": "sentinalops-fetcher/0.1"})
     buf = bytearray()
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with urllib.request.build_opener(_AllowedRedirects).open(req, timeout=timeout) as r:
         while chunk := r.read(1 << 16):
             buf += chunk
             if len(buf) > max_bytes:
@@ -262,11 +273,6 @@ def fetch_pypi_package(name: str, version: str | None = None, *, http_get: HttpG
                                "binary": res.n_binary, "artifact": art["filename"]})
     return FetchedPackage(name, version, art["filename"], digest, res.files,
                           build_meta(name, version, project, now), res.skipped, res.n_binary)
-
-
-def features_for(name: str, version: str | None = None, **kw) -> dict:
-    pkg = fetch_pypi_package(name, version, **kw)
-    return extract_package_features(pkg.files, pkg.meta)
 
 
 def main() -> None:

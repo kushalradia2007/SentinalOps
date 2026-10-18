@@ -53,6 +53,7 @@ class LoadReport:
     extra: list[str] = field(default_factory=list)
     malicious: int = 0
     benign: int = 0
+    filled_missing: int = 0
 
     @property
     def coverage(self) -> float:
@@ -113,7 +114,11 @@ def load_qut_dv25(path: str | Path, min_coverage: float = 0.5) -> tuple[pd.DataF
         raise ValueError(f"only {len(found)}/{len(EXPECTED_FEATURES)} expected features found; "
                          f"missing e.g. {report.missing[:5]} - is this the right file?")
     df = df.dropna(subset=[label_col]).copy()
-    out = df[found].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    out = df[found].apply(pd.to_numeric, errors="coerce")
+    report.filled_missing = int(out.isna().sum().sum())
+    out = out.fillna(0.0)
+    if report.filled_missing:
+        log.warning("filled missing/non-numeric values with 0", extra={"cells": report.filled_missing})
     out["label"] = df[label_col].map(normalize_label).astype(int)
     if key_col:
         out.insert(0, "package", df[key_col].astype(str))
@@ -131,8 +136,11 @@ def list_dataverse_files(doi: str = DOI, base: str = DATAVERSE, timeout: int = 6
     req = urllib.request.Request(url, headers={"User-Agent": "sentinalops-data/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         data = json.load(r)
-    return [{"id": f["dataFile"]["id"], "name": f["dataFile"]["filename"],
-             "size": f["dataFile"].get("filesize", 0)} for f in data["data"]["latestVersion"]["files"]]
+    return [
+        {"id": f["dataFile"]["id"], "name": f["dataFile"]["filename"],
+         "size": f["dataFile"].get("filesize", 0), "tabular": bool(f["dataFile"].get("tabularData"))}
+        for f in data["data"]["latestVersion"]["files"]
+    ]
 
 
 def download_dataset(out_dir: str | Path, doi: str = DOI, base: str = DATAVERSE,
@@ -142,8 +150,12 @@ def download_dataset(out_dir: str | Path, doi: str = DOI, base: str = DATAVERSE,
     if sum(f["size"] for f in files) > max_total_bytes:
         raise ValueError("dataset larger than max_total_bytes; raise the cap deliberately")
     out = Path(out_dir)
-    return [download_file(f"{base}/api/access/datafile/{f['id']}?format=original", out / f["name"],
-                          max_bytes=max_total_bytes) for f in files]
+    # Dataverse converts uploaded CSVs to .tab; ask for the original bytes, but only for tabular files
+    paths = []
+    for f in files:
+        url = f"{base}/api/access/datafile/{f['id']}" + ("?format=original" if f["tabular"] else "")
+        paths.append(download_file(url, out / f["name"], max_bytes=max_total_bytes))
+    return paths
 
 
 def main() -> None:

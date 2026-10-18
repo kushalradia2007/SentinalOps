@@ -56,7 +56,7 @@ class Settings(BaseModel):
 
 
 def load_domain_config(path: str | Path) -> DomainConfig:
-    with open(path) as f:
+    with Path(path).open() as f:
         return DomainConfig(**yaml.safe_load(f))
 
 

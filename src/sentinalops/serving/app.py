@@ -19,7 +19,6 @@ from sentinalops.schemas import (
     LabelRequest,
     Prediction,
     ScoreRequest,
-    ScoreResponse,
 )
 
 
@@ -53,15 +52,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if state["model"] is None or mtime != state["mtime"]:
                 state["model"], state["mtime"] = joblib.load(path), mtime
                 log.info("model loaded", extra={"path": str(path), "mtime": mtime})
-        return state["model"], f"champion-{int(state['mtime'])}"
+            return state["model"], f"champion-{int(state['mtime'])}"
 
     def append(name: str, row: dict) -> None:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
-        with open(settings.data_dir / name, "a") as f:
+        with (settings.data_dir / name).open("a") as f:
             f.write(json.dumps(row) + "\n")
 
-    @app.post("/score", response_model=ScoreResponse)
-    def score(req: ScoreRequest) -> ScoreResponse:
+    @app.post("/score", response_model=Prediction)
+    def score(req: ScoreRequest) -> Prediction:
         model, version = get_model()
         feats = extract_package_features(req.files, req.meta)
         p = float(model.predict_proba(pd.DataFrame([feats])[FEATURE_ORDER])[:, 1][0])
@@ -74,7 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record = FeatureRecord(package=name, features={k: float(v) for k, v in feats.items()})
         append("features.jsonl", {**record.model_dump(), "score": p, "model_version": version})
         log.info("scored", extra={"package": name, "score": round(p, 4), "blocked": blocked})
-        return ScoreResponse(**pred.model_dump(include={"package", "score", "blocked", "model_version"}))
+        return pred
 
     @app.post("/labels")
     def labels(req: LabelRequest) -> dict:
@@ -91,5 +90,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     return app
 
-
-app = create_app()

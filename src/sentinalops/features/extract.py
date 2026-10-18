@@ -17,11 +17,11 @@ POPULAR_PACKAGES = [
     "flask", "pytest", "scipy", "pillow", "cryptography", "pyyaml", "colorama",
 ]
 
-DANGEROUS_BUILTINS = {"exec", "eval", "compile", "__import__"}
-DANGEROUS_ATTRS = {
-    ("os", "system"), ("os", "popen"),
-    ("subprocess", "run"), ("subprocess", "Popen"),
-    ("subprocess", "call"), ("subprocess", "check_output"),
+DANGEROUS_CALLS = {
+    "exec": "n_exec_eval", "eval": "n_exec_eval", "compile": "n_exec_eval", "__import__": "n_exec_eval",
+    "os.system": "n_os_system", "os.popen": "n_os_system",
+    "subprocess.run": "n_subprocess", "subprocess.Popen": "n_subprocess",
+    "subprocess.call": "n_subprocess", "subprocess.check_output": "n_subprocess",
 }
 NETWORK_MODULES = {"socket", "urllib", "urllib.request", "requests", "http.client"}
 BLOB_RE = re.compile(r"[A-Za-z0-9+/=]{40,}")
@@ -42,26 +42,57 @@ def shannon_entropy(data: str) -> float:
     return -sum(c / n * math.log2(c / n) for c in counts.values())
 
 
+# Used when a file does not parse (Python 2 syntax, deliberate syntax errors, absurd nesting).
+# Failing to parse must never zero the danger features, or breaking the syntax becomes an evasion.
+_FALLBACK = {
+    "n_exec_eval": re.compile(r"\b(?:exec|eval|__import__)\b|\bcompile\s*\("),
+    "n_os_system": re.compile(r"\bos\s*\.\s*(?:system|popen)\b"),
+    "n_subprocess": re.compile(r"\bsubprocess\s*\.\s*(?:run|Popen|call|check_output)\b"),
+    "n_network": re.compile(r"\b(?:import|from)\s+(?:socket|urllib|requests|http\.client)\b"),
+}
+
+
+def _regex_features(source: str) -> dict:
+    return {k: len(rx.findall(source)) for k, rx in _FALLBACK.items()}
+
+
+def _imports(tree: ast.AST) -> tuple[dict[str, str], int]:
+    """Local name -> dotted origin (so `import os as o` and `from os import system` resolve),
+    plus the number of network-module imports."""
+    aliases: dict[str, str] = {}
+    n_network = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                aliases[a.asname or a.name.split(".")[0]] = a.name if a.asname else a.name.split(".")[0]
+                n_network += a.name in NETWORK_MODULES
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            for a in node.names:
+                aliases[a.asname or a.name] = f"{node.module}.{a.name}"
+            n_network += node.module in NETWORK_MODULES
+    return aliases, n_network
+
+
+def _call_target(func: ast.expr, aliases: dict[str, str]) -> str | None:
+    if isinstance(func, ast.Name):
+        target = aliases.get(func.id, func.id)
+    elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        target = f"{aliases.get(func.value.id, func.value.id)}.{func.attr}"
+    else:
+        return None
+    return target.removeprefix("builtins.")  # `import builtins as b; b.exec(...)` is still exec
+
+
 def ast_features(source: str) -> dict:
-    out = {"n_exec_eval": 0, "n_os_system": 0, "n_subprocess": 0, "n_network": 0}
     try:
         tree = ast.parse(source)
-    except SyntaxError:
-        return out
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return _regex_features(source)
+    aliases, n_network = _imports(tree)
+    out = {"n_exec_eval": 0, "n_os_system": 0, "n_subprocess": 0, "n_network": n_network}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            f = node.func
-            if isinstance(f, ast.Name) and f.id in DANGEROUS_BUILTINS:
-                out["n_exec_eval"] += 1
-            elif isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name):
-                pair = (f.value.id, f.attr)
-                if pair in DANGEROUS_ATTRS:
-                    key = "n_os_system" if pair[0] == "os" else "n_subprocess"
-                    out[key] += 1
-        elif isinstance(node, ast.Import):
-            out["n_network"] += sum(a.name in NETWORK_MODULES for a in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module in NETWORK_MODULES:
-            out["n_network"] += 1
+        if isinstance(node, ast.Call) and (key := DANGEROUS_CALLS.get(_call_target(node.func, aliases))):
+            out[key] += 1
     return out
 
 
