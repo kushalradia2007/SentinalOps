@@ -223,7 +223,3 @@ A second, shorter demo stops the feed on purpose to show predictions being suspe
 ## License
 
 MIT.
-
----
-
-<p align="center"><i>Built with ☕ and curiosity at IIT Bhilai</i></p>
