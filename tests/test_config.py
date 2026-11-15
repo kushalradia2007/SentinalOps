@@ -11,6 +11,13 @@ def test_domain_config_loads_repo_file():
     assert cfg.retrain_window_hours == 48
 
 
+def test_liquidity_domain_config_loads():
+    cfg = load_domain_config("configs/domain_liquidity.yaml")
+    assert cfg.domain == "market_liquidity"
+    assert "depth_top5" in cfg.drift_watch
+    assert cfg.features_module == "sentinalops.features.microstructure"
+
+
 def test_domain_config_validates_ranges():
     with pytest.raises(ValidationError):
         DomainConfig(domain="x", features_module="m", drift_watch=[], block_threshold=1.5)
