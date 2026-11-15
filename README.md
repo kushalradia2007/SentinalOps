@@ -1,6 +1,6 @@
-# Real-Time Anomaly Detection Platform
+# SentinalOps: Liquidity Intelligence
 
-### An end-to-end streaming ML system with feature store, MLOps, and automated retraining
+### A self-healing streaming ML platform that monitors market liquidity in real time
 
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://img.shields.io/badge/License-MIT-yellow.svg)
 [![Python](https://img.shields.io/badge/python-3.11-blue.svg)](https://img.shields.io/badge/python-3.11-blue.svg)
@@ -8,372 +8,221 @@
 
 ---
 
-## 📌 Overview
+## Overview
 
-Most machine learning projects stop at a Jupyter notebook with a trained model. In the real world, models must handle **streaming data**, serve **low-latency predictions**, maintain **feature consistency** between training and inference, and **self-heal** when data drifts.
+SentinalOps watches the BTCUSDT order book and trade flow on Binance's public market-data streams and does four things:
 
-This project builds a **production-grade real-time anomaly detection platform** that demonstrates the complete ML lifecycle — from data ingestion to automated retraining. It is designed as a portfolio-quality system that reflects how anomaly detection is actually deployed in industry: fraud detection, infrastructure monitoring, IoT predictive maintenance, and network intrusion detection.
+1. **Detects** abnormal liquidity conditions as they happen.
+2. **Forecasts** the probability that liquidity stress starts within the next 30 seconds.
+3. **Verifies** every forecast against what the market did after it was made.
+4. **Heals** itself: when the market regime changes and the forecasts get worse, it retrains, checks the new model against the old one, and promotes it only if it is better.
 
-> **One-line pitch:** A streaming ML platform that detects anomalies in real time, maintains online/offline feature consistency, and self-heals through monitoring, drift detection, and automated retraining.
+> **One-line pitch:** a streaming ML platform that detects abnormal market conditions, forecasts liquidity stress, grades its own predictions against the future, and adapts when market behaviour changes.
+
+### What this is not
+
+- It is not a trading bot. It places no orders and needs no API keys.
+- It does not predict prices.
+- It reports measurable market conditions. It makes no claim about manipulation or about why a liquidity event happened.
+
+> **Status:** the platform foundation (packaging, config, schemas, logging, CI, Docker stack) is built. The liquidity-specific work is planned in [`docs/ROADMAP.md`](docs/ROADMAP.md) and has not started; the code in `src/` still contains the earlier supply-chain prototype until chunk 2 replaces it.
 
 ---
 
-## 🎯 Objectives
+## Why this domain
 
-1. Build a **streaming ingestion pipeline** that simulates real-time data flow.
-2. Implement a **feature store** with online/offline consistency and point-in-time correctness.
-3. Train and rigorously compare **multiple anomaly detection methods** — statistical, classical ML, deep learning, and streaming.
-4. Deploy a **low-latency inference service** behind a REST API.
-5. Build **monitoring dashboards** for drift, performance, and data quality.
-6. Implement **CI/CD + automated retraining** triggered by drift or schedule.
-7. Produce a **reproducible, documented, deployable system** that runs with one command.
+| Need | How market liquidity provides it |
+| --- | --- |
+| A real live stream | Public WebSocket feeds of trades and order-book depth, with updates every 100 ms |
+| Ground-truth labels | The future stream itself: 30 seconds after a forecast, we can measure whether stress occurred |
+| A reason to self-heal | Markets move between regimes (calm, volatile, thin), so a model trained in one degrades in another |
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```text
-┌─────────────────┐
-│  Data Source    │  (replay / live feed / simulator)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Message Broker │  Redpanda (Kafka-compatible)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Stream Processor│  Faust / Python consumer
-│  (feature calc) │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Feature Store  │  Feast  (Redis online | Parquet offline)
-└────────┬────────┘
-         │
-         ├──────────────────────────┐
-         ▼                          ▼
-┌─────────────────┐        ┌─────────────────┐
-│  Training       │        │ Online Inference│
-│  (offline)      │        │  FastAPI        │
-│  MLflow         │        │  (low latency)  │
-└────────┬────────┘        └────────┬────────┘
-         │                          │
-         ▼                          ▼
-┌─────────────────┐        ┌─────────────────┐
-│ Model Registry  │───────▶│  Alerting       │
-│  (MLflow)       │        │  Slack / Webhook│
-└────────┬────────┘        └─────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────┐
-│  Monitoring & Observability                 │
-│  Evidently (drift) | Prometheus | Grafana   │
-└────────────────────┬────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────┐
-│  Orchestration & CI/CD                      │
-│  Prefect | GitHub Actions | Docker          │
-│  → Auto-retrain on drift or schedule        │
-└─────────────────────────────────────────────┘
-```
-
-> 📐 Full architecture documentation: We will plan properly
-
----
-
-## 🧰 Tech Stack
-
-| Layer               | Primary Choice                       | Why                                          |
-| ------------------- | ------------------------------------ | -------------------------------------------- |
-| Streaming           | **Redpanda**                         | Kafka-compatible, lightweight, single binary |
-| Stream Processing   | **Faust / Python consumer**          | Simple, Python-native                        |
-| Feature Store       | **Feast**                            | Industry-standard, open-source               |
-| Online Store        | **Redis**                            | Low-latency feature serving                  |
-| Offline Store       | **Parquet**                          | Simple, portable, columnar                   |
-| ML Libraries        | **PyOD, scikit-learn, PyTorch**      | Comprehensive anomaly detection              |
-| Experiment Tracking | **MLflow**                           | De facto standard                            |
-| Model Registry      | **MLflow**                           | Versioning + lineage                         |
-| Serving             | **FastAPI + Docker**                 | Fast, async, containerized                   |
-| Monitoring          | **Evidently + Prometheus + Grafana** | Drift + metrics + dashboards                 |
-| Orchestration       | **Prefect**                          | Python-native, easy DAGs                     |
-| CI/CD               | **GitHub Actions**                   | Free for students, integrated                |
-| Infrastructure      | **Docker Compose**                   | Reproducible local stack                     |
-
----
-
-## 📂 Repository Structure
-
-```text
-anomaly-detection-platform/
-├── docker-compose.yml          # Full local stack
-├── README.md
-├── LICENSE
-├── requirements.txt
-├── pyproject.toml
-├── .env.example
-├── .gitignore
-│
-├── docs/
-│   ├── architecture.md
-│   ├── adr/                    # Architecture Decision Records
-│   ├── model_card.md
-│   └── setup.md
-│
-├── data/
-│   ├── raw/                    # Downloaded datasets (gitignored)
-│   └── processed/              # Cleaned, feature-engineered data
-│
-├── ingestion/
-│   ├── producer.py             # Kafka/Redpanda producer
-│   └── replay_simulator.py     # Replays historical data as a stream
-│
-├── streaming/
-│   └── feature_pipeline.py     # Consumes stream, computes features
-│
-├── feature_store/
-│   ├── feature_repo/
-│   │   ├── features.py         # Feature definitions
-│   │   └── feature_store.yaml  # Feast config
-│   └── materialize.py          # Offline → online materialization
-│
-├── training/
-│   ├── train_baseline.py       # Isolation Forest, OCSVM, LOF
-│   ├── train_deep.py           # Autoencoder, LSTM-AD, VAE
-│   ├── train_streaming.py      # River / PySAD models
-│   └── evaluate.py             # AUC-PR, F1, detection delay, FPR
-│
-├── serving/
-│   ├── app.py                  # FastAPI inference service
-│   ├── model_loader.py
-│   └── Dockerfile
-│
-├── monitoring/
-│   ├── evidently_reports/
-│   ├── prometheus/
-│   │   └── prometheus.yml
-│   └── grafana/
-│       └── dashboards/
-│
-├── orchestration/
-│   └── retrain_dag.py          # Prefect flow: retrain → evaluate → promote
-│
-├── tests/
-│   ├── test_features.py
-│   ├── test_serving.py
-│   └── test_pipeline.py
-│
-├── notebooks/
-│   └── exploration.ipynb       # EDA only, not production code
-│
-└── .github/
-    ├── workflows/
-    │   └── ci.yml
-    ├── ISSUE_TEMPLATE/
-    └── pull_request_template.md
+┌──────────────────────┐
+│ Binance public WS    │  aggTrade + depth5@100ms (or replay of recorded data)
+└──────────┬───────────┘
+           ▼
+┌──────────────────────┐
+│ Producers + recorder │  feed health, reconnect, Parquet archive
+└──────────┬───────────┘
+           ▼
+┌──────────────────────┐
+│ Redpanda             │  raw_trades, raw_depth, features, predictions, outcomes
+└──────────┬───────────┘
+           ▼
+┌──────────────────────┐
+│ Stream processor     │  one feature tick per second, rolling 1/5/30/60 s windows
+└──────────┬───────────┘
+           ▼
+┌──────────────────────┐
+│ Feature store (Feast)│  Redis online | Parquet offline
+└─────┬──────────┬─────┘
+      ▼          ▼
+┌───────────┐  ┌──────────────────────┐
+│ Training  │  │ Online scoring       │  anomaly score + stress probability
+│ MLflow    │  │ FastAPI              │
+└─────┬─────┘  └──────────┬───────────┘
+      │                   ▼
+      │        ┌──────────────────────┐
+      │        │ Prediction ledger +  │  labels each forecast after its horizon
+      │        │ outcome verifier     │
+      │        └──────────┬───────────┘
+      ▼                   ▼
+┌──────────────────────────────────────┐
+│ Monitoring                           │  Evidently drift, matured-label
+│ Prometheus + Grafana                 │  precision/recall/Brier, feed health
+└──────────────────┬───────────────────┘
+                   ▼
+┌──────────────────────────────────────┐
+│ Self-healing (Prefect)               │  retrain → gates → promote → shadow
+│ MLflow registry: champion/challenger │  check → rollback if worse
+└──────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start
+## What the model predicts
 
-### Prerequisites
+**Liquidity stress** at time `t` means either of:
 
-* Docker & Docker Compose (v2+)
-* Python 3.11+
-* Git
+- **Depth depletion (primary):** top-five order-book depth falls below a fixed fraction of its trailing median.
+- **Spread expansion (secondary):** relative spread rises above a fixed multiple of its trailing median.
 
-### 1. Clone the repository
+The thresholds are chosen from training-period data and then frozen. The forecast target is the **onset** of stress within the next 30 seconds, made once per second.
+
+Rules that keep the evaluation honest:
+
+- Features at time `t` use only data up to `t`; the verifier uses only data after `t`.
+- Train and test periods are chronological, with an embargo gap of at least the horizon.
+- Every model is compared with a persistence baseline ("stressed now, so stressed in 30 seconds").
+- Feature drift alone never triggers retraining. A measured drop in matured-label performance does.
+
+### Features (about 10–15, each over 1, 5, 30 and 60 second windows)
+
+| Feature | Meaning |
+| --- | --- |
+| Mid-price | `(best_bid + best_ask) / 2` |
+| Relative spread | `(best_ask - best_bid) / mid_price` |
+| Bid / ask depth | Quantity across the top five levels on each side |
+| Depth imbalance | `(bid_depth - ask_depth) / (bid_depth + ask_depth)` |
+| Trade imbalance | Buy-initiated versus sell-initiated volume |
+| Trade intensity | Trades per window |
+| Realized volatility | Volatility of recent mid-price returns |
+| Depth / spread change | Change over each rolling window |
+
+---
+
+## Approaches compared
+
+| Approach | Methods | Library |
+| --- | --- | --- |
+| Rolling statistical thresholds | z-scores on spread, depth, imbalance | pandas |
+| Batch anomaly detection | Isolation Forest, ECOD, COPOD, autoencoder | scikit-learn, PyOD, PyTorch |
+| Online anomaly detection | Half-Space Trees, ADWIN drift | River |
+| Supervised stress forecaster | Gradient-boosted trees on verified outcomes | scikit-learn |
+
+## Metrics
+
+| Metric | Why it matters |
+| --- | --- |
+| PR-AUC, precision, recall | Stress events are rare, so accuracy is meaningless |
+| Recall at 1% false-positive rate | Alert quality at a tolerable false-alarm level |
+| Brier score and calibration | A forecast of 80% should come true about 80% of the time |
+| Detection lead time | Seconds of warning before stress begins |
+| False alarms per hour | Drives alert fatigue |
+| Per-regime breakdown | Shows where a model fails |
+| Inference latency (p50/p95/p99) | The forecast has to arrive before the event |
+| Heal time | Reliability alert to promoted model |
+
+---
+
+## Tech stack
+
+| Layer | Choice |
+| --- | --- |
+| Data source | Binance public Spot market data (WebSocket, no API key) |
+| Streaming | Redpanda (Kafka-compatible) |
+| Stream processing | Faust or a plain Python consumer |
+| Feature store | Feast, with Redis online and Parquet offline |
+| Models | scikit-learn, PyOD, River, PyTorch |
+| Tracking and registry | MLflow |
+| Serving | FastAPI |
+| Monitoring | Evidently, Prometheus, Grafana |
+| Orchestration | Prefect |
+| CI/CD | GitHub Actions |
+| Infrastructure | Docker Compose |
+
+---
+
+## Quick start
+
+Prerequisites: Docker with Compose v2, Python 3.11+, Git.
 
 ```bash
-git clone https://github.com/your-org/anomaly-detection-platform.git
-cd anomaly-detection-platform
-```
-
-### 2. Set up environment
-
-```bash
+git clone https://github.com/kushalradia2007/SentinalOps.git
+cd SentinalOps
+pip install -e ".[dev]"
+make test
 cp .env.example .env
-# Edit .env with your Slack webhook, credentials if needed
+docker compose up -d --build
 ```
 
-### 3. Start the full stack
-
-```bash
-docker compose up -d
-```
-
-This brings up:
-
-* Redpanda (streaming) → `localhost:9092`
-* Redis (online feature store) → `localhost:6379`
-* PostgreSQL (MLflow backend) → `localhost:5432`
-* MLflow → `http://localhost:5000`
-* FastAPI inference → `http://localhost:8000`
-* Prometheus → `http://localhost:9090`
-* Grafana → `http://localhost:3000` (admin/admin)
-
-### 4. Download data
-
-```bash
-python -m data.download --dataset nab
-```
-
-### 5. Replay stream + generate features
-
-```bash
-python ingestion/replay_simulator.py
-```
-
-### 6. Train baseline models
-
-```bash
-python training/train_baseline.py --config configs/baseline.yaml
-```
-
-### 7. Open the dashboard
-
-* **MLflow:** [http://localhost:5000](http://localhost:5000/)
-* **Grafana:** [http://localhost:3000](http://localhost:3000/)
-* **API docs:** http://localhost:8000/docs
-
-### 8. Shut down
-
-```bash
-docker compose down -v
-```
+This brings up the API on `:8000`, MLflow on `:5000`, Prometheus on `:9090` and Grafana on `:3000`. See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for what runs today and what is still planned.
 
 ---
 
-## 📊 Evaluation Metrics
+## The demo
 
-We evaluate anomaly detectors on metrics that matter in production — not just accuracy.
+The end-to-end demo replays a recorded period where the market changes regime:
 
-| Metric                              | Why It Matters                               |
-| ----------------------------------- | -------------------------------------------- |
-| **AUC-PR**                          | Better than ROC for highly imbalanced data   |
-| **Precision / Recall / F1**         | Standard detection quality                   |
-| **Detection Delay**                 | How many events before the anomaly is caught |
-| **False Positive Rate**             | Directly drives alert fatigue                |
-| **Inference Latency (p50/p95/p99)** | Real-time SLA compliance                     |
-| **Drift (PSI, KL, KS)**             | Detects when the model goes stale            |
-| **Business Impact**                 | Cost saved / incidents prevented             |
+1. **Calm market.** Forecasts mature and the champion beats the persistence baseline.
+2. **Regime shift.** Reliability falls and the `ReliabilityDropped` alert fires.
+3. **Heal.** The flow retrains a challenger and runs the promotion gates.
+4. **Promotion.** The champion alias moves, a "Model Healed" marker appears, and a shadow check guards against a bad promotion.
+5. **Recovery.** Reliability returns above the baseline.
+
+A second, shorter demo stops the feed on purpose to show predictions being suspended and resumed.
 
 ---
 
-## 🔬 Anomaly Detection Methods Compared
+## Scope for v1.0
 
-| Category      | Methods                               | Library      |
-| ------------- | ------------------------------------- | ------------ |
-| Statistical   | Z-score, EWMA, Seasonal Decomposition | statsmodels  |
-| Classical ML  | Isolation Forest, One-Class SVM, LOF  | PyOD         |
-| Deep Learning | Autoencoder, LSTM-AD, VAE             | PyTorch      |
-| Streaming     | Half-Space Trees, ADWIN drift         | River, PySAD |
-
-Results and comparison tables are logged to MLflow and summarized in [`docs/model_card.md`](https://docs/model_card.md).
+| In | Out |
+| --- | --- |
+| One symbol (BTCUSDT), one exchange | Multiple symbols or exchanges |
+| Top-five depth snapshots | Full order-book reconstruction |
+| 30-second binary stress forecast | Price prediction |
+| Monitoring and alerting | Any order placement or trading logic |
 
 ---
 
-## 🔁 MLOps Pipeline
+## Project docs
 
-### CI/CD (GitHub Actions)
+| Document | Description |
+| --- | --- |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | The 50-chunk plan and design rules |
+| [`docs/TASKS.md`](docs/TASKS.md) | Every open chunk split into small tasks |
+| [`docs/TEAM_PLAN.md`](docs/TEAM_PLAN.md) | Owners, mentoring, working rules, waves |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | Local setup and commands |
+| [`configs/domain_liquidity.yaml`](configs/domain_liquidity.yaml) | Domain settings: symbol, horizon, label, thresholds |
 
-On every push or PR:
+## Team
 
-1. **Lint** with Ruff
-2. **Test** with pytest
-3. **Build** Docker images
-4. **Push** to registry (main branch only)
-5. **Deploy** to staging (main branch only)
+| Name | Role | Focus area |
+| --- | --- | --- |
+| Kushal | Lead | Domain switch, verifier, self-healing core, serving, demo |
+| Vaibhav | Senior | Recorder, labels, features, models, scenarios |
+| Jaswanth | Senior | Streaming, feature store, MLOps |
+| Yogya | Junior | Archive loader, dataset QA, trade producer, dashboards, docs |
+| Tanuj | Junior | Depth producer, feed health, replay, alerts, demo video |
 
-### Automated Retraining (Prefect)
+## License
 
-A Prefect flow runs on schedule and on drift trigger:
-
-```text
-Ingest latest data
-    → Compute features
-    → Train candidate model
-    → Evaluate against champion
-    → If better: promote & deploy
-    → Else: keep champion, log result
-```
-
-### Monitoring & Drift
-
-* **Evidently** generates data drift + model performance reports.
-* **Prometheus** scrapes latency, throughput, and custom metrics.
-* **Grafana** visualizes drift, alerts, and SLA compliance.
-* **Slack** receives alerts when drift exceeds thresholds or performance degrades.
-
----
-
-## 🧪 Testing
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=. --cov-report=html
-
-# Lint
-ruff check .
-
-# Type check (optional)
-mypy .
-```
-
-Tests cover:
-
-* Feature computation correctness
-* Online/offline feature consistency
-* API contract and latency
-* Model loading and prediction shape
-* Drift detection triggers
-
----
-
-## 📈 Roadmap
-
-Track live progress on our [GitHub Project Board](https://github.com/your-org/anomaly-detection-platform/projects).
-
----
-
-## 👥 Team
-
-| Name     | Role                            | Focus Area                            |
-| -------- | ------------------------------- | ------------------------------------- |
-| Kushal   | Lead                            | Self-healing core, serving, demo      |
-| Vaibhav  | Senior                          | Data, features, models                |
-| Jaswanth | Senior                          | Streaming, feature store, MLOps       |
-| Yogya    | Junior                          | Data loaders, pollers, dashboards     |
-| Tanuj    | Junior                          | Webhooks, replay, alerts, demo video  |
-
-See [`docs/TEAM_PLAN.md`](docs/TEAM_PLAN.md) for who owns which chunk.
-
----
-
-## 📚 Documentation
-
-| Document                                               | Description                         |
-| ------------------------------------------------------ | ----------------------------------- |
-| [`docs/architecture.md`](https://docs/architecture.md) | System design and data flow         |
-| [`docs/setup.md`](https://docs/setup.md)               | Detailed local setup guide          |
-| [`docs/model_card.md`](https://docs/model_card.md)     | Model details, metrics, limitations |
-| [`docs/adr/`](https://docs/adr/)                       | Architecture Decision Records       |
-| [`CONTRIBUTING.md`](https://contributing.md/)          | How to contribute                   |
-
-NOTE - These files will me made soon with time.
-
----
-
-## 📜 License
-
-This project is licensed under the **MIT License** — see [`LICENSE`](https://license/) for details.
+MIT.
 
 ---
 

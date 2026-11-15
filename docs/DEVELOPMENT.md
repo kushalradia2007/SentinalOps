@@ -1,5 +1,10 @@
 # Development quickstart
 
+> **Domain switch in progress.** The project domain is now Liquidity Intelligence (see `docs/ROADMAP.md`).
+> The commands below still run the earlier supply-chain prototype. They keep working until chunks 2, 3 and 7-10
+> replace that code; the "Legacy data loaders" section at the bottom describes the old loaders and goes away with task 2.6.
+> The new domain settings are in `configs/domain_liquidity.yaml`; the default stays `domain_supply_chain.yaml` until task 2.3.
+
 ```bash
 pip install -e ".[dev]"
 make test                                   # pytest
@@ -21,7 +26,7 @@ The API image trains a baseline champion on first boot if `models/champion.jobli
 - `src/sentinalops/simulator/` harmless zero-day demo packages
 - `docs/ROADMAP.md` the 50-chunk plan
 
-## Data (chunks 7-9)
+## Legacy data loaders (old chunks 7-9)
 
 ```bash
 # MalwareBench (metadata only: names, versions, labels, file lists; full set is request-only)
