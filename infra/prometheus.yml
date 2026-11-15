@@ -5,3 +5,6 @@ scrape_configs:
     metrics_path: /metrics/
     static_configs:
       - targets: ["api:8000"]
+  - job_name: sentinalops-recorder
+    static_configs:
+      - targets: ["recorder:9108"]

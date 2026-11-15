@@ -9,7 +9,7 @@ description = "Self-healing streaming ML platform for software supply chain secu
 requires-python = ">=3.11"
 dependencies = [
   "numpy", "pandas", "scikit-learn", "joblib", "pyyaml",
-  "fastapi", "uvicorn[standard]", "pydantic", "prometheus-client", "pyarrow",
+  "fastapi", "uvicorn[standard]", "pydantic", "prometheus-client", "pyarrow", "websockets>=12",
 ]
 
 [project.optional-dependencies]
