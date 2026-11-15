@@ -43,6 +43,24 @@ services:
       redis: {condition: service_healthy}
       mlflow: {condition: service_healthy}
 
+  recorder:
+    build: .
+    entrypoint: ["python", "-m", "sentinalops.data.recorder"]
+    command: []
+    environment:
+      RECORDER_SYMBOLS: BTCUSDT
+      RECORDER_DATA_DIR: /app/data/raw/binance
+      RECORDER_METRICS_PORT: "9108"
+    volumes: ["./data:/app/data"]
+    ports: ["9108:9108"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9108/metrics')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 30s   # time to flush buffered rows on SIGTERM
+
   prometheus:
     image: prom/prometheus:latest
     volumes: ["./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]

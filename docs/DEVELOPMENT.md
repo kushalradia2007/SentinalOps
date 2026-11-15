@@ -26,6 +26,15 @@ The API image trains a baseline champion on first boot if `models/champion.jobli
 - `src/sentinalops/simulator/` harmless zero-day demo packages
 - `docs/ROADMAP.md` the 50-chunk plan
 
+## Stream recorder (chunk 7)
+
+```bash
+python -m sentinalops.data.recorder                    # record BTCUSDT trades + depth to data/raw/binance
+python -m sentinalops.data.audit_recording --hours 24  # row counts, disk use, gaps, integrity
+```
+
+Details, file layout and the failure cases it handles are in [`recorder.md`](recorder.md).
+
 ## Legacy data loaders (old chunks 7-9)
 
 ```bash
