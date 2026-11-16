@@ -49,13 +49,17 @@ class FakeExchange:
         self.connections = 0
         self.port = 0
         self._server = None
+        self._handlers: set[asyncio.Task] = set()
 
     async def _handler(self, ws, *_):
         self.connections += 1
+        self._handlers.add(asyncio.current_task())
         try:
             await self.script(ws, self.connections)
         except websockets.ConnectionClosed:
             pass
+        finally:
+            self._handlers.discard(asyncio.current_task())
 
     async def __aenter__(self) -> FakeExchange:
         self._server = await websockets.serve(self._handler, "127.0.0.1", 0)
@@ -63,8 +67,10 @@ class FakeExchange:
         return self
 
     async def __aexit__(self, *exc) -> None:
+        for task in list(self._handlers):  # scripts that sleep must not hold up teardown
+            task.cancel()
         self._server.close()
-        await self._server.wait_closed()
+        await asyncio.wait_for(self._server.wait_closed(), 10)
 
     @property
     def base_url(self) -> str:

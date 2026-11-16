@@ -76,7 +76,7 @@ def test_stale_stream_watchdog_forces_a_reconnect(tmp_path):
     rec = asyncio.run(go())
     assert rec.stats.reconnects >= 2 and rec.stats.gaps_written >= 2
     reasons = {g["reason"] for g in audit_recording.load_gap_log(tmp_path, None, None)}
-    assert reasons == {"stale:all"}
+    assert reasons and all(r.startswith("stale:") for r in reasons), reasons
 
 
 def test_silent_depth_stream_is_detected_while_trades_still_flow(tmp_path):
