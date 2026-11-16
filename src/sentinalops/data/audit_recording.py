@@ -43,13 +43,21 @@ def _file_span(path: Path) -> tuple[int, int] | None:
         return None
 
 
-def load_gap_log(root: Path, start_ms: int | None, end_ms: int | None) -> list[dict]:
+def load_gap_log(
+    root: Path, start_ms: int | None, end_ms: int | None, errors: list[str] | None = None
+) -> list[dict]:
+    """The recorder's outage log. Unreadable files are appended to ``errors``, never ignored."""
     gaps: list[dict] = []
     for f in sorted((root / "_gaps").glob("gap-*.parquet")):
         try:
-            gaps += pq.read_table(f, schema=GAP_SCHEMA).to_pylist()
-        except Exception:  # noqa: BLE001 - reported as unreadable by the caller's file scan
-            continue
+            table = pq.read_table(f)
+            if not table.schema.equals(GAP_SCHEMA, check_metadata=False):
+                raise ValueError(f"unexpected columns {table.schema.names}")
+            gaps += table.to_pylist()
+        except Exception as e:  # noqa: BLE001
+            if errors is None:
+                raise
+            errors.append(f"{f.relative_to(root)}: {e!r}")
     return [
         g
         for g in gaps
@@ -159,7 +167,8 @@ def audit(
     data_dir: str | Path, start_ms: int | None = None, end_ms: int | None = None, depth_gap_ms: int = 500
 ) -> dict:
     root = Path(data_dir)
-    gap_log = load_gap_log(root, start_ms, end_ms)
+    gap_errors: list[str] = []
+    gap_log = load_gap_log(root, start_ms, end_ms, gap_errors)
     streams = []
     for kind in (AGG_TRADE, DEPTH5):
         for symbol_dir in sorted((root / f"stream={kind}").glob("symbol=*")):
@@ -190,6 +199,8 @@ def audit(
         problems.append(f"{unexplained} gap(s) not covered by the recorder's gap log")
     if tmp_files:
         problems.append(f"{len(tmp_files)} leftover .tmp file(s)")
+    if gap_errors:
+        problems.append(f"{len(gap_errors)} unreadable file(s) in the recorder gap log")
 
     return {
         "data_dir": str(root),
@@ -204,6 +215,7 @@ def audit(
         "unexplained_gaps": unexplained,
         "rejected_frames": rejected_frames,
         "tmp_files": tmp_files,
+        "gap_log_errors": gap_errors,
         "problems": problems,
         "ok": not problems,
     }

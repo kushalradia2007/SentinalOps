@@ -225,7 +225,10 @@ class Recorder:
                 log.info("connected", extra={"url": self.url})
                 while True:
                     try:
-                        raw = await asyncio.wait_for(ws.recv(), self.cfg.stale_after_s)
+                        # asyncio.timeout, not wait_for: on Python 3.11 wait_for can swallow a
+                        # cancellation that arrives as a frame does, leaving this task running.
+                        async with asyncio.timeout(self.cfg.stale_after_s):
+                            raw = await ws.recv()
                     except TimeoutError:
                         return "stale:all"
                     recv_ms = int(self._clock() * 1000)
@@ -292,16 +295,18 @@ class Recorder:
                     extra={"reason": reason, "attempt": attempt, "retry_in_s": round(delay, 3)},
                 )
                 with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self._stop.wait(), delay)
+                    async with asyncio.timeout(delay):
+                        await self._stop.wait()
         finally:
             await self._cancel(current)
             stop.cancel()
 
     @staticmethod
     async def _cancel(task: asyncio.Task | None) -> None:
-        if task is not None:
+        # Re-cancel until the task has really ended, so a swallowed cancellation cannot hang shutdown.
+        while task is not None and not task.done():
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.wait({task}, timeout=1)
 
     # ---- background loops ------------------------------------------------------
     async def _flush_loop(self) -> None:
