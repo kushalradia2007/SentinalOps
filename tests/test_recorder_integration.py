@@ -250,3 +250,70 @@ def test_audit_flags_missing_trades_bad_schema_and_leftovers(tmp_path, capsys):
         audit_recording.main(["--data-dir", str(tmp_path)])
     assert e.value.code == 1 and "RESULT: FAIL" in capsys.readouterr().out
     audit_recording.main(["--data-dir", str(tmp_path), "--no-fail", "--json"])
+
+
+def test_rotation_with_a_lagging_old_connection_loses_nothing(tmp_path):
+    """The old link is 200 ms behind when the new one connects: its backlog must still be recorded."""
+    t0 = time.monotonic()
+
+    def index_at(delay: float) -> int:
+        return int((time.monotonic() - t0 - delay) / 0.005)
+
+    async def script(ws, n):
+        delay = 0.2 if n == 1 else 0.0  # the first connection is congested
+        sent = index_at(delay) if n > 1 else 0
+        while True:
+            latest = index_at(delay)
+            for i in range(sent + 1, latest + 1):
+                await ws.send(trade_frame(i))
+                await ws.send(depth_frame(i))
+            sent = max(sent, latest)
+            await asyncio.sleep(0.005)
+
+    async def go():
+        async with FakeExchange(script) as ex:
+            rec = make_recorder(tmp_path, ex, max_connection_s=0.6)
+            await run_until(rec, lambda: rec.stats.rotations >= 1 and rec.stats.messages[DEPTH5] > 250)
+            return rec
+
+    rec = asyncio.run(go())
+    assert rec.stats.rotations >= 1 and rec.stats.reconnects == 0
+    for kind, column in ((AGG_TRADE, "agg_trade_id"), (DEPTH5, "last_update_id")):
+        ids = _column(tmp_path, kind, column)
+        missing = sorted(set(range(ids[0], ids[-1] + 1)) - set(ids))
+        assert not missing, f"{kind}: {len(missing)} ids lost across the rotation, e.g. {missing[:5]}"
+
+
+def test_rotation_records_a_gap_when_the_old_connection_never_catches_up(tmp_path):
+    t0 = time.monotonic()
+    second_open = asyncio.Event()
+
+    def index_now() -> int:
+        return int((time.monotonic() - t0) / 0.005)
+
+    async def script(ws, n):
+        if n > 1:
+            second_open.set()
+        delay = 0.3 if n == 1 else 0.0  # far behind, and goes silent once replaced
+        sent = index_now() if n > 1 else 0
+        while not (n == 1 and second_open.is_set()):
+            latest = int((time.monotonic() - t0 - delay) / 0.005)
+            for i in range(sent + 1, latest + 1):
+                await ws.send(trade_frame(i))
+                await ws.send(depth_frame(i))
+            sent = max(sent, latest)
+            await asyncio.sleep(0.005)
+        await asyncio.sleep(30)
+
+    async def go():
+        async with FakeExchange(script) as ex:
+            rec = make_recorder(tmp_path, ex, max_connection_s=0.6, rotation_drain_s=0.3, stale_after_s=5)
+            await run_until(rec, lambda: rec.stats.rotations >= 1 and rec.stats.messages[DEPTH5] > 250)
+            return rec
+
+    rec = asyncio.run(go())
+    assert rec.stats.rotation_drain_timeouts == 1 and rec.stats.reconnects == 0
+    report = audit_recording.audit(tmp_path)
+    trades = next(s for s in report["streams"] if s["stream"] == AGG_TRADE)
+    assert trades["gaps"] and all(g["explained_by"] == "rotation_drain" for g in trades["gaps"])
+    assert report["unexplained_gaps"] == 0, report["problems"]

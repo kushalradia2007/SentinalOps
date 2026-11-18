@@ -14,6 +14,7 @@ from pathlib import Path
 import websockets
 
 from sentinalops.data.recorder.messages import (
+    AGG_TRADE,
     ALLOWED_HOSTS,
     DEFAULT_BASE_URL,
     DEPTH5,
@@ -46,6 +47,7 @@ class RecorderConfig:
     backoff_base_s: float = 0.5
     backoff_max_s: float = 30.0
     stats_interval_s: float = 30.0
+    rotation_drain_s: float = 10.0  # how long the old connection gets to deliver its backlog
     metrics_port: int | None = None
 
     def __post_init__(self) -> None:
@@ -60,6 +62,7 @@ class RecorderStats:
     malformed: int = 0
     reconnects: int = 0
     rotations: int = 0
+    rotation_drain_timeouts: int = 0
     connect_failures: int = 0
     gaps_written: int = 0
     flushes: int = 0
@@ -69,6 +72,32 @@ class RecorderStats:
     last_flush_seconds: float = 0.0
     last_recv_ms: int = 0
     last_event_ms: int = 0
+
+
+class _Tap:
+    """Holds a new connection's frames back until ``release()``, then passes them straight on."""
+
+    def __init__(self, forward: Callable[[str | bytes, int], None]) -> None:
+        self.held: list[tuple[str | bytes, int]] | None = []
+        self.first_seq: dict[tuple[str, str], int] = {}
+        self.forward = forward
+
+    def on_frame(self, raw: str | bytes, recv_ms: int) -> None:
+        if self.held is None:
+            self.forward(raw, recv_ms)
+            return
+        self.held.append((raw, recv_ms))
+        try:
+            parsed = parse_message(raw, recv_ms)
+        except ValueError:
+            return  # counted as malformed when replayed
+        if parsed is not None:
+            kind, row = parsed
+            self.first_seq.setdefault((kind, row["symbol"]), row[SEQUENCE_COLUMN[kind]])
+
+    def release(self) -> list[tuple[str | bytes, int]]:
+        held, self.held = self.held or [], None
+        return held
 
 
 def backoff_delay(attempt: int, base: float, cap: float, rng: Callable[[], float] = random.random) -> float:
@@ -209,7 +238,7 @@ class Recorder:
                 return s
         return None
 
-    async def _connection(self, ready: asyncio.Event) -> str:
+    async def _connection(self, ready: asyncio.Event, on_frame: Callable | None = None) -> str:
         """Run one WebSocket connection until it ends. Returns the reason it ended."""
         try:
             async with self._connect(
@@ -232,7 +261,7 @@ class Recorder:
                     except TimeoutError:
                         return "stale:all"
                     recv_ms = int(self._clock() * 1000)
-                    self.handle(raw, recv_ms)
+                    (on_frame or self.handle)(raw, recv_ms)
                     ready.set()
                     stale = self._stale_depth_symbol(recv_ms, opened_ms)
                     if stale:
@@ -263,23 +292,11 @@ class Recorder:
                     if stop in done or current in done:
                         break
                     # Connection is old: open its replacement before closing it, so nothing is missed.
-                    new_ready = asyncio.Event()
-                    successor = asyncio.create_task(self._connection(new_ready))
-                    waiter = asyncio.create_task(new_ready.wait())
-                    await asyncio.wait(
-                        {waiter, successor, stop, current}, timeout=30, return_when=asyncio.FIRST_COMPLETED
-                    )
-                    waiter.cancel()
-                    if new_ready.is_set() and not successor.done():
-                        await self._cancel(current)
-                        current, ready = successor, new_ready
-                        self.stats.rotations += 1
-                        log.info("connection rotated", extra={"rotations": self.stats.rotations})
-                    else:
-                        await self._cancel(successor)
-                        log.warning("rotation failed, keeping the old connection for now")
-                        if current.done() or self._stop.is_set():
-                            break
+                    rotated = await self._rotate(current, stop)
+                    if rotated is not None:
+                        current, ready = rotated
+                    elif current.done() or self._stop.is_set():
+                        break
                 if self._stop.is_set():
                     break
                 reason = current.result()
@@ -300,6 +317,61 @@ class Recorder:
         finally:
             await self._cancel(current)
             stop.cancel()
+
+    async def _rotate(
+        self, current: asyncio.Task, stop: asyncio.Task
+    ) -> tuple[asyncio.Task, asyncio.Event] | None:
+        """Replace ``current`` with a fresh connection without losing or reordering frames.
+
+        The new connection's frames are held back while the old connection keeps delivering
+        its backlog. Once the old one has caught up with the first frame the new one saw, for
+        every stream, it is closed and the held frames are replayed (duplicates are dropped by
+        sequence number). If the old one cannot catch up in time, the switch still happens and
+        the possible hole is written to the gap log. Returns ``None`` if the new connection failed.
+        """
+        tap = _Tap(self.handle)
+        new_ready = asyncio.Event()
+        successor = asyncio.create_task(self._connection(new_ready, tap.on_frame))
+        waiter = asyncio.create_task(new_ready.wait())
+        await asyncio.wait(
+            {waiter, successor, stop, current}, timeout=30, return_when=asyncio.FIRST_COMPLETED
+        )
+        waiter.cancel()
+        if not new_ready.is_set() or successor.done() or self._stop.is_set():
+            await self._cancel(successor)
+            log.warning("rotation failed, keeping the old connection for now")
+            return None
+
+        deadline = time.monotonic() + self.cfg.rotation_drain_s
+        while not self._caught_up(tap.first_seq):
+            if current.done() or self._stop.is_set() or time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(0.01)
+        caught_up = self._caught_up(tap.first_seq)
+        await self._cancel(current)
+        if not caught_up and not self._stop.is_set():
+            self.stats.rotation_drain_timeouts += 1
+            if self._open_gap is None:
+                self._open_gap = (
+                    self.stats.last_recv_ms or int(self._clock() * 1000),
+                    "rotation_drain",
+                    "all",
+                )
+            log.warning("old connection did not catch up before the switch", extra={"behind": tap.first_seq})
+        for raw, recv_ms in tap.release():  # synchronous: nothing can interleave with the replay
+            self.handle(raw, recv_ms)
+        self.stats.rotations += 1
+        log.info("connection rotated", extra={"rotations": self.stats.rotations, "caught_up": caught_up})
+        return successor, new_ready
+
+    def _caught_up(self, first_seq: dict[tuple[str, str], int]) -> bool:
+        """Has the old connection delivered everything before the new connection's first frames?"""
+        for (kind, symbol), first in first_seq.items():
+            # trade ids are contiguous; depth update ids are not, so depth needs a snapshot as new
+            need = first - 1 if kind == AGG_TRADE else first
+            if self._last_seq.get((kind, symbol), -1) < need:
+                return False
+        return bool(first_seq)
 
     @staticmethod
     async def _cancel(task: asyncio.Task | None) -> None:
