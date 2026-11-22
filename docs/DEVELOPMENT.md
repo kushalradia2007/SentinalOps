@@ -22,6 +22,7 @@ The API image trains a baseline champion on first boot if `models/champion.jobli
 - `src/sentinalops/config.py` typed config and env settings; `label_params()` / `feature_params()` feed the modules below
 - `src/sentinalops/schemas.py` `TradeEvent`, `DepthSnapshot`, `FeatureTick`, `StressPrediction`, `OutcomeLabel`
 - `src/sentinalops/data/recorder/` Binance stream recorder; `data/audit_recording.py` its audit
+- `src/sentinalops/data/pipeline.py` recordings -> labelled training table (chunk 12)
 - `src/sentinalops/labels.py` the stress label; `features/microstructure.py` the 34 model features
 - `src/sentinalops/simulator/regimes.py` synthetic calm and volatile regimes
 - `src/sentinalops/training/` baseline champion; `serving/` FastAPI app (`/score`, `/outcomes`, `/health`, `/metrics`)
@@ -35,3 +36,12 @@ python -m sentinalops.data.audit_recording --hours 24  # row counts, disk use, g
 ```
 
 Details, file layout and the failure cases it handles are in [`recorder.md`](recorder.md).
+
+## Offline feature and label table (chunk 12)
+
+```bash
+python -m sentinalops.data.pipeline        # data/raw/binance -> data/processed/features/date=*/hour=*.parquet
+python scripts/bench_pipeline.py           # speed check on a synthetic day (target < 10 min)
+```
+
+Details in [`pipeline.md`](pipeline.md).
