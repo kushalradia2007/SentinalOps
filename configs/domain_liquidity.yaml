@@ -1,6 +1,5 @@
 # Domain config for SentinalOps: Liquidity Intelligence.
-# Keys known to DomainConfig are validated today; the keys under "liquidity-specific"
-# are ignored until the schema is extended (see docs/TASKS.md, task 2.1).
+# Every key is typed and range-checked by sentinalops.config.DomainConfig; unknown keys are errors.
 domain: market_liquidity
 thesis: >
   Market microstructure is non-stationary: detect abnormal liquidity conditions
@@ -15,20 +14,20 @@ drift_watch: [rel_spread, depth_top5, depth_imbalance, trade_intensity_5s, reali
 drift_threshold: 0.3        # Evidently drift share; drift alone never triggers retraining
 retrain_window_hours: 6
 promotion_metric: avg_precision
-block_threshold: 0.5        # alert threshold on the stress probability
-label_delay_minutes: 1      # labels mature after the horizon; real value is label_horizon_seconds
+alert_threshold: 0.5        # alert when the stress probability is at least this
 
-# --- liquidity-specific (not yet in DomainConfig) ---
 symbol: BTCUSDT
 prediction_cadence_seconds: 1
-label_horizon_seconds: 30
+label_horizon_seconds: 30   # labels mature this long after the prediction
 feature_windows_seconds: [1, 5, 30, 60]
 label:
   primary: depth_depletion          # top-5 depth falls below a fraction of its trailing median
   depth_fraction: 0.5               # placeholder; frozen from training data in task 9.3
-  secondary: spread_expansion       # spread exceeds a multiple of its trailing median
+  secondary: spread_expansion       # spread exceeds a multiple of its trailing median (null = off)
   spread_multiple: 3.0              # placeholder; frozen from training data in task 9.3
   reference_window_seconds: 600
+  min_reference_seconds: 300        # reference is not trusted before this much history
+  confirm_ticks: 2                  # consecutive stressed ticks before stress counts
   onset_only: true                  # only label transitions from calm into stress
 split_embargo_seconds: 60           # gap between train and test, at least the horizon
 stale_data_seconds: 3               # suspend predictions when the feed is older than this

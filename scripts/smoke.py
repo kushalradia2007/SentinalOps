@@ -6,7 +6,7 @@ import sys
 import time
 import urllib.request
 
-from sentinalops.simulator.zero_day import benign_package, evil_package
+from sentinalops.simulator.regimes import example_ticks
 
 
 def call(base: str, path: str, body: dict | None = None):
@@ -32,10 +32,14 @@ def wait_healthy(base: str, tries: int = 30) -> None:
 def main() -> None:
     base = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
     wait_healthy(base)
-    for label, pkg in (("benign", benign_package()), ("evil", evil_package())):
-        files, meta = pkg
-        print(label, call(base, "/score", {"files": files, "meta": meta}))
-    print("label", call(base, "/labels", {"package": "trusted-core-lib", "is_malicious": True}))
+    ts_ms = int(time.time() * 1000)
+    calm, stressed = example_ticks()
+    for i, (label, features) in enumerate((("calm", calm), ("stressed", stressed))):
+        body = {"symbol": "BTCUSDT", "ts_ms": ts_ms + i * 1000, "features": features}
+        r = call(base, "/score", body)
+        print(f"{label:9s} probability={r['probability']:.3f} alert={r['alert']}")
+    outcome = {"symbol": "BTCUSDT", "ts_ms": ts_ms + 1000, "horizon_s": 30, "label": 1}
+    print("outcome", call(base, "/outcomes", outcome))
     print("smoke OK")
 
 
