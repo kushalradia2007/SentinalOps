@@ -1,27 +1,128 @@
-"""Typed configuration: per-domain YAML + environment settings."""
+"""Typed configuration: the domain YAML plus environment settings.
+
+``DomainConfig`` is the single typed view of ``configs/domain_liquidity.yaml``. Unknown keys
+are rejected, so a typo in the YAML fails loudly instead of silently using a default. The
+label and feature modules get their parameters from here (``label_params``,
+``feature_params``), so training, serving and the outcome verifier all read one file.
+"""
+
 from __future__ import annotations
 
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+if TYPE_CHECKING:  # imported lazily at runtime to keep config import cheap
+    from sentinalops.features.microstructure import FeatureParams
+    from sentinalops.labels import LabelParams
+
+DEFAULT_DOMAIN_CONFIG = Path("configs/domain_liquidity.yaml")
 
 
-class DomainConfig(BaseModel):
-    """Everything that changes between domains lives in one YAML file."""
+class _Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class Sources(_Strict):
+    offline: list[str] = Field(default_factory=list)
+    live: list[str] = Field(default_factory=list)
+    delayed_labels: list[str] = Field(default_factory=list)
+
+
+class LabelConfig(_Strict):
+    """The stress-label block. See ``docs/labels.md`` for the definition."""
+
+    primary: Literal["depth_depletion"] = "depth_depletion"
+    depth_fraction: float = Field(0.5, gt=0, lt=1)
+    secondary: Literal["spread_expansion"] | None = "spread_expansion"
+    spread_multiple: float = Field(3.0, gt=1)
+    reference_window_seconds: int = Field(600, ge=1)
+    min_reference_seconds: int = Field(300, ge=1)
+    confirm_ticks: int = Field(2, ge=1)
+    onset_only: Literal[True] = True  # persistence labels are not implemented, on purpose
+
+    @model_validator(mode="after")
+    def _reference_fits(self) -> LabelConfig:
+        if self.min_reference_seconds > self.reference_window_seconds:
+            raise ValueError("min_reference_seconds cannot exceed reference_window_seconds")
+        return self
+
+
+class DomainConfig(_Strict):
+    """Everything that defines the domain lives in one YAML file."""
 
     domain: str
     thesis: str = ""
-    sources: dict[str, list[str]] = Field(default_factory=dict)
+    sources: Sources = Field(default_factory=Sources)
     features_module: str
-    drift_watch: list[str]
+    drift_watch: list[str] = Field(min_length=1)
     drift_threshold: float = Field(0.3, ge=0, le=1)
-    retrain_window_hours: int = Field(48, gt=0)
-    promotion_metric: str = "avg_precision"
-    block_threshold: float = Field(0.5, ge=0, le=1)
-    label_delay_minutes: int = Field(60, ge=0)
+    retrain_window_hours: int = Field(6, gt=0)
+    promotion_metric: Literal["avg_precision", "brier", "roc_auc"] = "avg_precision"
+    alert_threshold: float = Field(0.5, ge=0, le=1)
+
+    symbol: str = Field("BTCUSDT", pattern=r"^[A-Z0-9]{5,20}$")
+    prediction_cadence_seconds: int = Field(1, ge=1, le=60)
+    label_horizon_seconds: int = Field(30, ge=1, le=3600)
+    feature_windows_seconds: tuple[int, ...] = Field((1, 5, 30, 60), min_length=1)
+    label: LabelConfig = Field(default_factory=LabelConfig)
+    split_embargo_seconds: int = Field(60, ge=0)
+    stale_data_seconds: float = Field(3.0, gt=0, le=60)
+    min_labels_for_retrain: int = Field(2000, ge=1)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> DomainConfig:
+        cadence = self.prediction_cadence_seconds
+        windows = self.feature_windows_seconds
+        if len(set(windows)) != len(windows) or list(windows) != sorted(windows) or windows[0] < 1:
+            raise ValueError("feature_windows_seconds must be positive, unique and ascending")
+        if self.label_horizon_seconds % cadence or self.label.reference_window_seconds % cadence:
+            raise ValueError("label horizon and reference window must be multiples of the cadence")
+        if self.split_embargo_seconds < self.label_horizon_seconds:
+            raise ValueError("split_embargo_seconds must be at least label_horizon_seconds")
+        unknown = sorted(set(self.drift_watch) - set(self.feature_names))
+        if unknown:
+            raise ValueError(f"drift_watch names unknown features: {unknown}")
+        return self
+
+    @property
+    def feature_names(self) -> list[str]:
+        from sentinalops.features.microstructure import feature_names
+
+        return feature_names(self.feature_windows_seconds)
+
+    @property
+    def stale_ms(self) -> int:
+        return int(round(self.stale_data_seconds * 1000))
+
+    def feature_params(self) -> FeatureParams:
+        from sentinalops.features.microstructure import FeatureParams
+
+        return FeatureParams(
+            windows_s=self.feature_windows_seconds,
+            cadence_s=self.prediction_cadence_seconds,
+            stale_ms=self.stale_ms,
+        )
+
+    def label_params(self) -> LabelParams:
+        from sentinalops.labels import LabelParams
+
+        lab = self.label
+        return LabelParams(
+            cadence_s=self.prediction_cadence_seconds,
+            horizon_s=self.label_horizon_seconds,
+            reference_window_s=lab.reference_window_seconds,
+            min_reference_ticks=lab.min_reference_seconds // self.prediction_cadence_seconds,
+            depth_fraction=lab.depth_fraction,
+            spread_multiple=lab.spread_multiple,
+            use_spread=lab.secondary is not None,
+            confirm_ticks=lab.confirm_ticks,
+            stale_ms=self.stale_ms,
+        )
 
 
 class Settings(BaseModel):
@@ -29,9 +130,9 @@ class Settings(BaseModel):
 
     model_path: Path = Path("models/champion.joblib")
     data_dir: Path = Path("data")
-    domain_config: Path = Path("configs/domain_supply_chain.yaml")
+    domain_config: Path = DEFAULT_DOMAIN_CONFIG
     log_level: str = "INFO"
-    block_threshold: float | None = Field(None, ge=0, le=1)  # overrides domain config
+    alert_threshold: float | None = Field(None, ge=0, le=1)  # overrides the domain config
     kafka_broker: str = "localhost:9092"
     mlflow_tracking_uri: str = "http://localhost:5000"
     redis_url: str = "redis://localhost:6379"
@@ -44,7 +145,7 @@ class Settings(BaseModel):
             "data_dir": e.get("DATA_DIR"),
             "domain_config": e.get("DOMAIN_CONFIG"),
             "log_level": e.get("LOG_LEVEL"),
-            "block_threshold": e.get("BLOCK_THRESHOLD"),
+            "alert_threshold": e.get("ALERT_THRESHOLD"),
             "kafka_broker": e.get("KAFKA_BROKER"),
             "mlflow_tracking_uri": e.get("MLFLOW_TRACKING_URI"),
             "redis_url": e.get("REDIS_URL"),
@@ -52,14 +153,17 @@ class Settings(BaseModel):
         return cls(**{k: v for k, v in raw.items() if v not in (None, "")})
 
     def effective_threshold(self, cfg: DomainConfig) -> float:
-        return cfg.block_threshold if self.block_threshold is None else self.block_threshold
+        return cfg.alert_threshold if self.alert_threshold is None else self.alert_threshold
 
 
 def load_domain_config(path: str | Path) -> DomainConfig:
-    with Path(path).open() as f:
-        return DomainConfig(**yaml.safe_load(f))
+    with Path(path).open(encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: expected a mapping at the top level")
+    return DomainConfig(**raw)
 
 
 @lru_cache(maxsize=8)
-def get_domain_config(path: str | Path = "configs/domain_supply_chain.yaml") -> DomainConfig:
+def get_domain_config(path: str | Path = DEFAULT_DOMAIN_CONFIG) -> DomainConfig:
     return load_domain_config(path)

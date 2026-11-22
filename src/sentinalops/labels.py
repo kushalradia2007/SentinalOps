@@ -62,19 +62,9 @@ class LabelParams:
 
     @classmethod
     def from_domain_yaml(cls, path: str | Path) -> LabelParams:
-        import yaml
+        from sentinalops.config import load_domain_config
 
-        cfg = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-        lab = cfg.get("label", {})
-        return cls(
-            cadence_s=int(cfg.get("prediction_cadence_seconds", 1)),
-            horizon_s=int(cfg.get("label_horizon_seconds", 30)),
-            reference_window_s=int(lab.get("reference_window_seconds", 600)),
-            depth_fraction=float(lab.get("depth_fraction", 0.5)),
-            spread_multiple=float(lab.get("spread_multiple", 3.0)),
-            use_spread=lab.get("secondary") == "spread_expansion",
-            stale_ms=int(float(cfg.get("stale_data_seconds", 3)) * 1000),
-        )
+        return load_domain_config(path).label_params()
 
 
 # ---- 1. book state -----------------------------------------------------------------

@@ -1,17 +1,16 @@
 # Development quickstart
 
-> **Domain switch in progress.** The project domain is now Liquidity Intelligence (see `docs/ROADMAP.md`).
-> The commands below still run the earlier supply-chain prototype. They keep working until chunks 2, 3 and 7-10
-> replace that code; the "Legacy data loaders" section at the bottom describes the old loaders and goes away with task 2.6.
-> The new domain settings are in `configs/domain_liquidity.yaml`; the default stays `domain_supply_chain.yaml` until task 2.3.
+All settings come from `configs/domain_liquidity.yaml` (typed and validated by `sentinalops.config.DomainConfig`;
+unknown keys are errors). Until recorded data flows through the chunk 12 pipeline, training uses synthetic
+calm and volatile regimes from `sentinalops.simulator.regimes`.
 
 ```bash
 pip install -e ".[dev]"
 make test                                   # pytest
 ruff check .                                # lint
-python -m sentinalops.training.train_baseline   # trains models/champion.joblib (synthetic data for now)
+python -m sentinalops.training.train_baseline   # trains models/champion.joblib on the synthetic calm regime
 uvicorn sentinalops.serving.app:create_app --factory --reload     # API on :8000
-python scripts/smoke.py                          # scores benign + zero-day package, posts a label
+python scripts/smoke.py                          # scores a calm and a pre-stress tick, posts an outcome
 ```
 
 Full stack: `cp .env.example .env && docker compose up -d --build`
@@ -19,11 +18,13 @@ Full stack: `cp .env.example .env && docker compose up -d --build`
 The API image trains a baseline champion on first boot if `models/champion.joblib` is missing.
 
 ## Layout
-- `configs/` per-domain YAML (everything domain-specific)
-- `src/sentinalops/features/` pure feature extractors (shared by stream, API, training)
-- `src/sentinalops/schemas.py` event + API schemas, `config.py` settings, `logging.py` JSON logs
-- `src/sentinalops/serving/` FastAPI app (`/score`, `/labels`, `/health`, `/metrics`)
-- `src/sentinalops/simulator/` harmless zero-day demo packages
+- `configs/domain_liquidity.yaml` the domain: symbol, cadence, horizon, windows, label block, embargo, stale limit
+- `src/sentinalops/config.py` typed config and env settings; `label_params()` / `feature_params()` feed the modules below
+- `src/sentinalops/schemas.py` `TradeEvent`, `DepthSnapshot`, `FeatureTick`, `StressPrediction`, `OutcomeLabel`
+- `src/sentinalops/data/recorder/` Binance stream recorder; `data/audit_recording.py` its audit
+- `src/sentinalops/labels.py` the stress label; `features/microstructure.py` the 34 model features
+- `src/sentinalops/simulator/regimes.py` synthetic calm and volatile regimes
+- `src/sentinalops/training/` baseline champion; `serving/` FastAPI app (`/score`, `/outcomes`, `/health`, `/metrics`)
 - `docs/ROADMAP.md` the 50-chunk plan
 
 ## Stream recorder (chunk 7)
@@ -34,20 +35,3 @@ python -m sentinalops.data.audit_recording --hours 24  # row counts, disk use, g
 ```
 
 Details, file layout and the failure cases it handles are in [`recorder.md`](recorder.md).
-
-## Legacy data loaders (old chunks 7-9)
-
-```bash
-# MalwareBench (metadata only: names, versions, labels, file lists; full set is request-only)
-python -m sentinalops.data.malwarebench download            # public Zenodo sample -> data/raw/malwarebench
-python -m sentinalops.data.malwarebench ingest              # -> data/processed/malwarebench/{packages,files}.parquet
-# QUT-DV25 install-time traces (Harvard Dataverse doi:10.7910/DVN/LBMXJY)
-python -m sentinalops.data.qut_dv25 download --list         # see what the dataset holds
-python -m sentinalops.data.qut_dv25 download && python -m sentinalops.data.qut_dv25 ingest
-# Safe fetcher: statically read a PyPI release and print its features (never executes anything)
-python -m sentinalops.data.fetcher requests 2.31.0
-RUN_NETWORK_TESTS=1 pytest -k live                          # optional live test against PyPI
-```
-
-MalwareBench contains **no source code**, so malicious packages' code comes from the fetchers or
-another corpus; many malicious releases are removed from PyPI.
