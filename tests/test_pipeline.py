@@ -189,3 +189,22 @@ def test_cli_prints_a_summary(tmp_path, recording, capsys):
     P.main(["--data-dir", str(root / "raw"), "--out", str(tmp_path / "o"), "--include-last"])
     text = capsys.readouterr().out
     assert "4 built" in text and "label rate" in text
+
+
+def test_read_events_with_an_unbounded_range_is_instant(tmp_path):
+    """Regression: a range starting at epoch 0 used to loop over every hour since 1970."""
+    import time
+
+    depth, trades = make_events(H0 - 60_000, 120, seed=4)  # two hour folders
+    write_recording(tmp_path, depth, trades)
+    stray = tmp_path / f"stream={DEPTH5}" / "symbol=BTCUSDT" / "date=notes" / "hour=xx"
+    stray.mkdir(parents=True)
+    (stray / "part-junk.parquet").write_text("not parquet")
+
+    t0 = time.perf_counter()
+    got = P.read_events(tmp_path, DEPTH5, "BTCUSDT", 0, 10**15)
+    assert time.perf_counter() - t0 < 5
+    assert len(got) == len(depth)
+    assert len(P.read_events(tmp_path, AGG_TRADE, "BTCUSDT", 0, 10**15)) == len(trades)
+    assert P.read_events(tmp_path, DEPTH5, "BTCUSDT", 0, H0 - 3_600_000).empty  # before any data
+    assert P.recorded_hours(tmp_path, "BTCUSDT") == [H0 - P.HOUR_MS, H0]
