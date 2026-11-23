@@ -1,4 +1,3 @@
-import json
 import os
 
 import joblib
@@ -7,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from sentinalops.config import Settings
 from sentinalops.serving.app import create_app
+from sentinalops.serving.ledger import Ledger
 from sentinalops.simulator.regimes import example_ticks, make_ticks
 from sentinalops.training.train_baseline import fit
 
@@ -44,8 +44,8 @@ def test_score_calm_and_stressed_ticks_and_ledger(client):
     assert r_calm["probability"] < 0.2 and r_calm["alert"] is False
     assert r_stress["probability"] > 0.5 and r_stress["alert"] is True
     assert r_calm["horizon_s"] == 30 and r_calm["model_version"].startswith("champion-")
-    rows = [json.loads(line) for line in (tmp / "data" / "predictions.jsonl").read_text().splitlines()]
-    assert [r["ts_ms"] for r in rows] == [TS, TS + 1000]
+    rows = Ledger(tmp / "data" / "ledger.sqlite").predictions()
+    assert [r["ts_ms"] for r in rows] == [TS, TS + 1000] and rows[0]["result"] == "pending"
     assert rows[0]["prediction_id"] == r_calm["prediction_id"] and rows[0]["features"] == calm
 
 
@@ -79,8 +79,8 @@ def test_outcomes_and_metrics(client):
     void = {"symbol": "BTCUSDT", "ts_ms": TS + 1000, "horizon_s": 30, "label": None, "void_reason": "gap"}
     assert c.post("/outcomes", json=void).status_code == 200
     assert c.post("/outcomes", json={**ok, "label": None}).status_code == 422
-    rows = [json.loads(line) for line in (tmp / "data" / "outcomes.jsonl").read_text().splitlines()]
-    assert [r["label"] for r in rows] == [1, None]
+    rows = Ledger(tmp / "data" / "ledger.sqlite").predictions()
+    assert [(r["label"], r["result"]) for r in rows] == [(1, "hit")]
     text = c.get("/metrics/").text
     assert "sentinalops_stress_probability_count 1.0" in text
     assert "sentinalops_alerts_total 1.0" in text

@@ -1,14 +1,13 @@
 """FastAPI inference service: /score, /outcomes, /metrics, /health.
 
 ``POST /score`` takes one feature tick and returns the probability that liquidity stress
-starts within the horizon. Each prediction is appended to ``predictions.jsonl`` (the seed of
-the prediction ledger, chunk 34). ``POST /outcomes`` takes the verified outcome of an earlier
-tick and appends it to ``outcomes.jsonl``.
+starts within the horizon. Each prediction is stored in the prediction ledger
+(``data_dir/ledger.sqlite``, chunk 34). ``POST /outcomes`` stores the verified outcome of an
+earlier tick there too.
 """
 
 from __future__ import annotations
 
-import json
 import time
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +16,7 @@ from prometheus_client import CollectorRegistry, Counter, Histogram, make_asgi_a
 from sentinalops.config import Settings, get_domain_config
 from sentinalops.logging import configure_logging, get_logger
 from sentinalops.schemas import OutcomeLabel, ScoreRequest, StressPrediction
+from sentinalops.serving.ledger import Ledger
 from sentinalops.serving.model import ChampionModel, ModelUnavailable
 
 
@@ -42,10 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     champion = ChampionModel(settings.model_path, feature_order)
 
-    def append(name: str, row: dict) -> None:
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
-        with (settings.data_dir / name).open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row) + "\n")
+    ledger = Ledger(settings.data_dir / "ledger.sqlite")
 
     @app.post("/score", response_model=StressPrediction)
     def score(req: ScoreRequest) -> StressPrediction:
@@ -64,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         prob_h.observe(p)
         if pred.alert:
             alerts_c.inc()
-        append("predictions.jsonl", {**pred.model_dump(), "features": req.features})
+        ledger.add_prediction(pred, req.features)
         log.info("scored", extra={"ts_ms": req.ts_ms, "probability": round(p, 4), "alert": pred.alert})
         return pred
 
@@ -72,7 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def outcomes(outcome: OutcomeLabel) -> dict:
         label = "void" if outcome.label is None else str(outcome.label)
         outcomes_c.labels(label).inc()
-        append("outcomes.jsonl", outcome.model_dump())
+        ledger.add_outcome(outcome)
         log.info("outcome recorded", extra={"ts_ms": outcome.ts_ms, "label": label})
         return {"status": "recorded", "ts_ms": outcome.ts_ms, "label": outcome.label}
 
