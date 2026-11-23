@@ -106,15 +106,26 @@ def _hour_dir(root: Path, kind: str, symbol: str, h_ms: int) -> Path:
     return root / f"stream={kind}" / f"symbol={symbol}" / f"date={dt:%Y-%m-%d}" / f"hour={dt:%H}"
 
 
+def _hours_on_disk(root: Path, kind: str, symbol: str) -> dict[int, Path]:
+    """Hour start (ms) -> folder, for every hour folder of one stream that holds data files.
+
+    Folders whose names are not a valid ``date=YYYY-MM-DD/hour=HH`` are ignored.
+    """
+    base = Path(root) / f"stream={kind}" / f"symbol={symbol}"
+    hours: dict[int, Path] = {}
+    for d in base.glob("date=*/hour=*"):
+        try:
+            dt = datetime.strptime(f"{d.parent.name[5:]} {d.name[5:]}", "%Y-%m-%d %H").replace(tzinfo=UTC)
+        except ValueError:
+            continue
+        if any(d.glob("part-*.parquet")):
+            hours[int(dt.timestamp() * 1000)] = d
+    return dict(sorted(hours.items()))
+
+
 def recorded_hours(root: str | Path, symbol: str) -> list[int]:
     """Start times (ms) of every hour that has depth data for ``symbol``."""
-    base = Path(root) / f"stream={DEPTH5}" / f"symbol={symbol}"
-    hours = []
-    for d in base.glob("date=*/hour=*"):
-        if any(d.glob("part-*.parquet")):
-            dt = datetime.strptime(f"{d.parent.name[5:]} {d.name[5:]}", "%Y-%m-%d %H").replace(tzinfo=UTC)
-            hours.append(int(dt.timestamp() * 1000))
-    return sorted(hours)
+    return list(_hours_on_disk(Path(root), DEPTH5, symbol))
 
 
 def read_events(root: str | Path, kind: str, symbol: str, start_ms: int, end_ms: int) -> pd.DataFrame:
@@ -122,12 +133,14 @@ def read_events(root: str | Path, kind: str, symbol: str, start_ms: int, end_ms:
 
     Duplicates (the same exchange sequence number twice, e.g. across a restart) keep the first
     receive. Ties on receive time are broken by the sequence number, so the order is deterministic.
+    Only hour folders that exist are visited, so any range is cheap, however wide.
     """
-    root = Path(root)
+    folders = _hours_on_disk(Path(root), kind, symbol)
     files = [
         f
-        for h in range(hour_start(start_ms), end_ms, HOUR_MS)
-        for f in sorted(_hour_dir(root, kind, symbol, h).glob("part-*.parquet"))
+        for h, d in folders.items()
+        if h + HOUR_MS > start_ms and h < end_ms
+        for f in sorted(d.glob("part-*.parquet"))
     ]
     if not files:
         return pd.DataFrame()
