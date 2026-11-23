@@ -31,4 +31,17 @@ label:
   onset_only: true                  # only label transitions from calm into stress
 split_embargo_seconds: 60           # gap between train and test, at least the horizon
 stale_data_seconds: 3               # suspend predictions when the feed is older than this
-min_labels_for_retrain: 2000
+heal:                               # the self-healing loop (chunks 39, 42-45)
+  metrics_window_minutes: 60        # rolling window for live scores
+  min_positives: 20                 # fewer stress events than this in the window: no verdict
+  degradation_margin: 0.15          # degraded when live AP < champion's holdout AP - this
+  min_matured_labels: 2000          # matured labels since promotion before a retrain
+  cooldown_minutes: 60              # no second retrain attempt within this
+  replay_fraction: 0.3              # older rows mixed in, relative to the recent rows
+  holdout_fraction: 0.2             # newest slice of the window, held out for the gates
+  min_gain: 0.05                    # challenger must beat the champion's AP by this
+  max_regression: 0.10              # ...and lose at most this much AP on older regimes
+  min_lift_over_baseline: 1.5       # ...and reach this multiple of the base rate
+  max_brier_increase: 0.01          # ...and not be worse calibrated than this
+  shadow_minutes: 30                # old champion keeps scoring in shadow this long
+  rollback_margin: 0.05             # roll back if the new champion is worse by this
