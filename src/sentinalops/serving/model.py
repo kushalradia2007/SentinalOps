@@ -40,7 +40,8 @@ class ChampionModel:
                 if list(getattr(model, "feature_names_in_", [])) != self.feature_order:
                     raise ModelUnavailable("model inputs do not match the configured features")
                 self._model, self._mtime = model, mtime
-            return self._model, f"champion-{int(self._mtime)}"
+            # The registry stamps a version on the model object, so it always matches the file read.
+            return self._model, getattr(self._model, "sentinal_version_", f"champion-{int(self._mtime)}")
 
     def predict(self, features: dict[str, float]) -> tuple[float, str]:
         """Stress probability for one feature dict, and the model version that produced it."""

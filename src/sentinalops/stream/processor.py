@@ -57,6 +57,7 @@ class ProcessorStats:
     feature_ticks: int = 0
     suspended_ticks: int = 0  # ticks with no valid features: stale feed or warm-up
     predictions: int = 0
+    shadow_predictions: int = 0
     scoring_errors: int = 0
     last_tick_ms: int | None = None
 
@@ -97,6 +98,7 @@ class StreamProcessor:
         cfg: DomainConfig,
         model: ChampionModel | None = None,
         allowed_lateness_ms: int = 500,
+        shadow: ChampionModel | None = None,
         alert_threshold: float | None = None,
     ) -> None:
         if allowed_lateness_ms < 0:
@@ -104,6 +106,7 @@ class StreamProcessor:
         self.cfg = cfg
         self.params = cfg.feature_params()
         self.model = model
+        self.shadow = shadow  # the previous champion during a shadow period (chunk 45)
         self.lateness = allowed_lateness_ms
         self.threshold = cfg.alert_threshold if alert_threshold is None else alert_threshold
         self.step = self.params.cadence_s * 1000
@@ -170,12 +173,22 @@ class StreamProcessor:
                 self.stats.scoring_errors += 1
                 log.warning("cannot score", extra={"ts_ms": ts_ms, "error": str(e)})
                 return out
-            out.append((PREDICTIONS_TOPIC, StressPrediction(
-                symbol=self.cfg.symbol, ts_ms=ts_ms, horizon_s=self.cfg.label_horizon_seconds,
-                probability=p, alert=p >= self.threshold, threshold=self.threshold, model_version=version,
-            )))
+            out.append((PREDICTIONS_TOPIC, self._prediction(ts_ms, p, version)))
             self.stats.predictions += 1
+        if self.shadow is not None and self.shadow.available:
+            try:  # shadow scores go to the ledger under their own version; alerting uses the champion's
+                p, version = self.shadow.predict(feats)
+                out.append((PREDICTIONS_TOPIC, self._prediction(ts_ms, p, version)))
+                self.stats.shadow_predictions += 1
+            except ModelUnavailable:
+                pass
         return out
+
+    def _prediction(self, ts_ms: int, p: float, version: str) -> StressPrediction:
+        return StressPrediction(
+            symbol=self.cfg.symbol, ts_ms=ts_ms, horizon_s=self.cfg.label_horizon_seconds,
+            probability=p, alert=p >= self.threshold, threshold=self.threshold, model_version=version,
+        )
 
     def _features(self, ts_ms: int) -> dict[str, float] | None:
         if not self.depth.rows:

@@ -52,6 +52,29 @@ class LabelConfig(_Strict):
         return self
 
 
+class HealConfig(_Strict):
+    """The self-healing loop: when to retrain, how, and what a challenger must prove."""
+
+    # monitoring (chunk 39)
+    metrics_window_minutes: int = Field(60, ge=1)  # rolling window for live scores
+    min_positives: int = Field(20, ge=1)  # fewer stress events in the window -> no verdict
+    degradation_margin: float = Field(0.15, gt=0, lt=1)  # AP drop vs the champion's reference
+    # trigger (chunk 42)
+    min_matured_labels: int = Field(2000, ge=1)  # since the champion was promoted
+    cooldown_minutes: int = Field(60, ge=0)
+    # retraining (chunk 43)
+    replay_fraction: float = Field(0.3, ge=0, le=2)  # older rows added, relative to recent rows
+    holdout_fraction: float = Field(0.2, gt=0, lt=1)  # newest slice of the window, for the gates
+    # gates (chunk 44)
+    min_gain: float = Field(0.05, ge=0)  # challenger AP - champion AP on the current regime
+    max_regression: float = Field(0.10, ge=0)  # allowed AP loss on older regimes
+    min_lift_over_baseline: float = Field(1.5, ge=1)  # challenger AP / base rate
+    max_brier_increase: float = Field(0.01, ge=0)
+    # promotion (chunk 45)
+    shadow_minutes: int = Field(30, ge=0)
+    rollback_margin: float = Field(0.05, ge=0)  # new champion worse than the old by this -> rollback
+
+
 class DomainConfig(_Strict):
     """Everything that defines the domain lives in one YAML file."""
 
@@ -72,7 +95,7 @@ class DomainConfig(_Strict):
     label: LabelConfig = Field(default_factory=LabelConfig)
     split_embargo_seconds: int = Field(60, ge=0)
     stale_data_seconds: float = Field(3.0, gt=0, le=60)
-    min_labels_for_retrain: int = Field(2000, ge=1)
+    heal: HealConfig = Field(default_factory=HealConfig)
 
     @model_validator(mode="after")
     def _consistent(self) -> DomainConfig:

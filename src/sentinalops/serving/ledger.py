@@ -134,6 +134,16 @@ class Ledger:
             )
             return cur.rowcount == 1
 
+    def add_predictions(self, preds: list[StressPrediction]) -> int:
+        """Store many predictions in one transaction (no feature snapshots). Returns rows added."""
+        with closing(self._connect()) as db, db:
+            cur = db.executemany(
+                "INSERT OR IGNORE INTO predictions VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [(p.prediction_id, p.symbol, p.ts_ms, p.horizon_s, p.probability, int(p.alert),
+                  p.threshold, p.model_version, p.scored_at_ms, None) for p in preds],
+            )
+            return cur.rowcount
+
     def add_outcome(self, outcome: OutcomeLabel) -> bool:
         """Store a verified outcome. The first outcome for a tick wins; replays are ignored."""
         with closing(self._connect()) as db, db:
