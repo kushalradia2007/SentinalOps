@@ -9,17 +9,15 @@ tick and appends it to ``outcomes.jsonl``.
 from __future__ import annotations
 
 import json
-import threading
 import time
 
-import joblib
-import pandas as pd
 from fastapi import FastAPI, HTTPException
 from prometheus_client import CollectorRegistry, Counter, Histogram, make_asgi_app
 
 from sentinalops.config import Settings, get_domain_config
 from sentinalops.logging import configure_logging, get_logger
 from sentinalops.schemas import OutcomeLabel, ScoreRequest, StressPrediction
+from sentinalops.serving.model import ChampionModel, ModelUnavailable
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -42,25 +40,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="SentinalOps", version="0.2.0")
     app.mount("/metrics", make_asgi_app(registry=registry))
 
-    state: dict = {"model": None, "mtime": 0.0}
-    lock = threading.Lock()
-
-    def get_model():
-        """Hot-reload whenever the promoted champion file changes (the 'heal' step)."""
-        path = settings.model_path
-        if not path.exists():
-            raise HTTPException(status_code=503, detail="model not available")
-        mtime = path.stat().st_mtime
-        with lock:
-            if state["model"] is None or mtime != state["mtime"]:
-                model = joblib.load(path)
-                inputs = list(getattr(model, "feature_names_in_", []))
-                if inputs != feature_order:
-                    raise HTTPException(status_code=503,
-                                        detail="model inputs do not match the configured features")
-                state["model"], state["mtime"] = model, mtime
-                log.info("model loaded", extra={"path": str(path), "mtime": mtime})
-            return state["model"], f"champion-{int(state['mtime'])}"
+    champion = ChampionModel(settings.model_path, feature_order)
 
     def append(name: str, row: dict) -> None:
         settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -74,9 +54,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         missing, extra = sorted(expected - req.features.keys()), sorted(req.features.keys() - expected)
         if missing or extra:
             raise HTTPException(status_code=422, detail={"missing": missing, "unexpected": extra})
-        model, version = get_model()
-        row = pd.DataFrame([[req.features[k] for k in feature_order]], columns=feature_order)
-        p = float(model.predict_proba(row)[:, 1][0])
+        try:
+            p, version = champion.predict(req.features)
+        except ModelUnavailable as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
         pred = StressPrediction(symbol=req.symbol, ts_ms=req.ts_ms, horizon_s=cfg.label_horizon_seconds,
                                 probability=p, alert=p >= threshold, threshold=threshold,
                                 model_version=version)
