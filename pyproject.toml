@@ -15,7 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 stream = ["aiokafka", "httpx"]
 mlops = ["mlflow", "evidently", "prefect", "feast[redis]"]
-dev = ["pytest", "ruff", "httpx"]
+dev = ["pytest", "ruff", "httpx", "aiokafka"]  # aiokafka: KafkaBus tests
 
 [tool.setuptools.packages.find]
 where = ["src"]
