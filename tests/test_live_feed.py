@@ -4,11 +4,11 @@ import asyncio
 import json
 
 import pytest
-from sentinalops.live.feed import BinanceFeed
 
 from recorder_helpers import LOCAL, FakeExchange, depth_frame, trade_frame
 from sentinalops.data.recorder import RecorderConfig
 from sentinalops.live.bus import InMemoryBus
+from sentinalops.live.feed import BinanceFeed
 
 
 def test_feed_publishes_raw_topics_via_fake_exchange(tmp_path):
