@@ -114,11 +114,15 @@ class Ledger:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as db:
+            # WAL: readers never block the writer, and the API and the live pipeline can both write
+            # (a second writer waits up to the 30 s timeout instead of failing).
+            db.execute("PRAGMA journal_mode=WAL")
             db.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
         # One short-lived connection per call: safe from FastAPI's thread pool and async consumers.
         db = sqlite3.connect(self.path, timeout=30)
+        db.execute("PRAGMA synchronous=NORMAL")  # safe with WAL; a crash can lose only the last commit
         db.row_factory = sqlite3.Row
         return db
 
@@ -144,6 +148,28 @@ class Ledger:
             )
             return cur.rowcount
 
+    def add_many(
+        self,
+        predictions: list[tuple[StressPrediction, dict[str, float] | None]],
+        outcomes: list[OutcomeLabel],
+    ) -> tuple[int, int]:
+        """Predictions (with feature snapshots) and outcomes in one transaction. Returns rows added."""
+        with closing(self._connect()) as db, db:
+            before = db.total_changes
+            db.executemany(
+                "INSERT OR IGNORE INTO predictions VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [(p.prediction_id, p.symbol, p.ts_ms, p.horizon_s, p.probability, int(p.alert),
+                  p.threshold, p.model_version, p.scored_at_ms,
+                  json.dumps(f) if f is not None else None) for p, f in predictions],
+            )
+            added_p = db.total_changes - before
+            db.executemany(
+                "INSERT OR IGNORE INTO outcomes VALUES (?,?,?,?,?,?,?)",
+                [(o.symbol, o.ts_ms, o.horizon_s, o.label, o.void_reason, o.source, o.verified_at_ms)
+                 for o in outcomes],
+            )
+            return added_p, db.total_changes - before - added_p
+
     def add_outcome(self, outcome: OutcomeLabel) -> bool:
         """Store a verified outcome. The first outcome for a tick wins; replays are ignored."""
         with closing(self._connect()) as db, db:
@@ -164,9 +190,10 @@ class Ledger:
             return cur.rowcount
 
     # ---- reads (34.5, 34.6) --------------------------------------------------------------------
-    def _rows(self, where: str = "", params: tuple = ()) -> list[dict]:
+    def _rows(self, where: str = "", params: tuple = (), with_features: bool = True) -> list[dict]:
+        query = _JOINED if with_features else _JOINED.replace("p.features,", "NULL AS features,")
         with closing(self._connect()) as db:
-            rows = db.execute(f"{_JOINED} {where} ORDER BY p.ts_ms, p.prediction_id", params).fetchall()
+            rows = db.execute(f"{query} {where} ORDER BY p.ts_ms, p.prediction_id", params).fetchall()
         out = []
         for r in rows:
             d = dict(r)
@@ -181,7 +208,8 @@ class Ledger:
         return rows[0] if rows else None
 
     def predictions(self, since_ms: int = 0, until_ms: int | None = None,
-                    model_version: str | None = None) -> list[dict]:
+                    model_version: str | None = None, with_features: bool = True) -> list[dict]:
+        """Joined prediction rows; ``with_features=False`` skips reading and parsing the snapshots."""
         clauses, params = ["p.ts_ms >= ?"], [since_ms]
         if until_ms is not None:
             clauses.append("p.ts_ms < ?")
@@ -189,7 +217,7 @@ class Ledger:
         if model_version is not None:
             clauses.append("p.model_version = ?")
             params.append(model_version)
-        return self._rows("WHERE " + " AND ".join(clauses), tuple(params))
+        return self._rows("WHERE " + " AND ".join(clauses), tuple(params), with_features)
 
     def scores(self, since_ms: int = 0, until_ms: int | None = None,
                model_version: str | None = None) -> Scores:

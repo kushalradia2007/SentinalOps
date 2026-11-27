@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -52,6 +52,24 @@ class LabelConfig(_Strict):
         return self
 
 
+class ModelConfig(_Strict):
+    """Which model package to train by hand (``python -m sentinalops.training.train``).
+
+    The heal loop does not read this: it retrains the champion with the champion's own recipe.
+    """
+
+    name: str = "gbm_v1"
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _known(self) -> ModelConfig:
+        from sentinalops.models import list_recipes
+
+        if self.name not in list_recipes():
+            raise ValueError(f"unknown model {self.name!r}; known models: {list_recipes()}")
+        return self
+
+
 class HealConfig(_Strict):
     """The self-healing loop: when to retrain, how, and what a challenger must prove."""
 
@@ -87,6 +105,7 @@ class DomainConfig(_Strict):
     retrain_window_hours: int = Field(6, gt=0)
     promotion_metric: Literal["avg_precision", "brier", "roc_auc"] = "avg_precision"
     alert_threshold: float = Field(0.5, ge=0, le=1)
+    model: ModelConfig = Field(default_factory=ModelConfig)
 
     symbol: str = Field("BTCUSDT", pattern=r"^[A-Z0-9]{5,20}$")
     prediction_cadence_seconds: int = Field(1, ge=1, le=60)

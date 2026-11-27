@@ -1,0 +1,10 @@
+# Optional Redpanda broker for --bus kafka. 3 GB is reserved on purpose: it also keeps the Oracle
+# Always Free VM above the 20% memory line that protects it from idle reclamation.
+services:
+  redpanda:
+    image: redpandadata/redpanda:latest
+    command: [redpanda, start, --smp, "1", --memory, 3G, --overprovisioned, --node-id, "0",
+              --kafka-addr, "PLAINTEXT://0.0.0.0:9092", --advertise-kafka-addr, "PLAINTEXT://127.0.0.1:9092"]
+    ports: ["127.0.0.1:9092:9092"]
+    volumes: ["/var/lib/sentinalops/redpanda:/var/lib/redpanda/data"]
+    restart: unless-stopped

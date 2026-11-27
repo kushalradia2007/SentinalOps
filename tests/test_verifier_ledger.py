@@ -207,3 +207,76 @@ def test_processor_verifier_and_ledger_close_the_loop(tmp_path):
     s = led.scores()
     assert s.scored + s.void + s.pending == len(rows) and s.hit + s.miss > 0
     assert 0 <= s.brier <= 1
+
+
+def test_ledger_wal_enabled(tmp_path):
+    import sqlite3
+
+    Ledger(tmp_path / "l.sqlite")
+    with sqlite3.connect(tmp_path / "l.sqlite") as db:
+        assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_ledger_table_filters_void_and_dedupes_shadow(tmp_path):
+    from sentinalops.heal.ledger_table import ledger_table
+
+    led = Ledger(tmp_path / "l.sqlite")
+    names = CFG.feature_names
+    t0 = 1_763_200_800_000
+    for i in range(4):
+        ts = t0 + i * 1000
+        for version, scored, value in (("v002", 20, 2.0), ("v001", 10, 1.0)):  # shadow scored first
+            led.add_prediction(
+                StressPrediction(symbol="BTCUSDT", ts_ms=ts, horizon_s=30, probability=0.1, alert=False,
+                                 threshold=0.5, model_version=version, scored_at_ms=ts + scored),
+                dict.fromkeys(names, value + i))
+        label, reason = ((None, "gap") if i == 2 else (i % 2, None))
+        led.add_outcome(OutcomeLabel(symbol="BTCUSDT", ts_ms=ts, horizon_s=30, label=label,
+                                     void_reason=reason))
+    led.add_prediction(StressPrediction(symbol="BTCUSDT", ts_ms=t0 + 9000, horizon_s=30, probability=0.1,
+                                        alert=False, threshold=0.5, model_version="v001"),
+                       dict.fromkeys(names, 0.0))  # not matured yet
+    df = ledger_table(led, t0, t0 + 60_000, names)
+    assert list(df["ts_ms"]) == [t0, t0 + 1000, t0 + 3000]  # void and pending rows are gone
+    assert list(df["label"]) == [0, 1, 1]
+    assert list(df[names[0]]) == [1.0, 2.0, 4.0]  # the earlier-scored (v001) features
+    assert (df["label_status"] == "ok").all() and (df["regime"] == "untagged").all()
+    assert ledger_table(led, t0 + 1000, t0 + 3000, names)["ts_ms"].tolist() == [t0 + 1000]
+
+
+def test_ledger_add_many_is_one_idempotent_batch(tmp_path):
+    led = Ledger(tmp_path / "l.sqlite")
+    t0 = 1_763_200_800_000
+    preds = [(StressPrediction(prediction_id=f"{i:032x}", symbol="BTCUSDT", ts_ms=t0 + i * 1000,
+                               horizon_s=30, probability=0.2, alert=False, threshold=0.5,
+                               model_version="v1"), {"a": float(i)})
+             for i in range(3)]
+    outs = [OutcomeLabel(symbol="BTCUSDT", ts_ms=t0 + i * 1000, horizon_s=30, label=i % 2) for i in range(2)]
+    assert led.add_many(preds, outs) == (3, 2)
+    assert led.add_many(preds, outs) == (0, 0)  # replayed batch: nothing new
+    rows = led.predictions(0)
+    assert len(rows) == 3 and rows[0]["features"] == {"a": 0.0} and rows[1]["label"] == 1
+
+
+def test_predictions_can_skip_features_and_window_scores_does(tmp_path, monkeypatch):
+    """Heal checks run every 5 min over everything since promotion: they must not parse features."""
+    import json as json_mod
+
+    from sentinalops.heal.monitor import window_scores
+
+    led = Ledger(tmp_path / "l.sqlite")
+    t0 = 1_763_200_800_000
+    led.add_many([(StressPrediction(symbol="BTCUSDT", ts_ms=t0 + i * 1000, horizon_s=30, probability=0.3,
+                                    alert=False, threshold=0.5, model_version="v1"), {"a": 1.0})
+                   for i in range(3)],
+                  [OutcomeLabel(symbol="BTCUSDT", ts_ms=t0 + i * 1000, horizon_s=30, label=i % 2)
+                   for i in range(3)])
+    assert all(r["features"] is None for r in led.predictions(0, with_features=False))
+    assert led.predictions(0)[0]["features"] == {"a": 1.0}  # the default is unchanged
+
+    def no_parsing(*a, **k):
+        raise AssertionError("features were parsed")
+
+    monkeypatch.setattr(json_mod, "loads", no_parsing)
+    w = window_scores(led, t0, t0 + 10_000, "v1")
+    assert (w.n, w.positives) == (3, 1)

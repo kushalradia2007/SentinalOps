@@ -25,7 +25,7 @@ SentinalOps watches the BTCUSDT order book and trade flow on Binance's public ma
 - It does not predict prices.
 - It reports measurable market conditions. It makes no claim about manipulation or about why a liquidity event happened.
 
-> **Status:** the foundation and data layer are built: typed liquidity config and event schemas (chunk 2), synthetic calm/volatile regimes with a baseline champion and the thesis test (chunk 3), the Binance stream recorder (chunk 7), the stress label (chunk 9) and the microstructure features (chunk 10). The `/score` API takes a feature tick and returns a stress probability. Next is the offline feature and label pipeline (chunk 12); see [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> **Status:** data layer, stream processor, prediction ledger, outcome verifier and self-healing loop are built. The model is a plug-in (`src/sentinalops/models/`, see [`docs/models.md`](docs/models.md)), and the heal loop retrains the installed model's own recipe. The live system runs end to end from Binance to the ledger and the heal service (`python -m sentinalops.live`, see [`docs/live.md`](docs/live.md)), over an in-memory bus or Redpanda, with an Oracle Cloud deploy kit in `deploy/oracle/`. Next: champion candidates and evaluation on recorded data (chunks 26, 30, 31); see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ---
 

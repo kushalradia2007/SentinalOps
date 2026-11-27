@@ -72,6 +72,7 @@ class RecorderStats:
     last_flush_seconds: float = 0.0
     last_recv_ms: int = 0
     last_event_ms: int = 0
+    hook_errors: int = 0  # on_row raised; counted, never propagated
 
 
 class _Tap:
@@ -112,8 +113,14 @@ class Recorder:
         cfg: RecorderConfig,
         connect: Callable = websockets.connect,
         clock: Callable[[], float] = time.time,
+        on_row: Callable[[str, dict], None] | None = None,
+        record: bool = True,
     ) -> None:
+        """``on_row(kind, row)`` sees every de-duplicated row (the live pipeline's feed);
+        ``record=False`` keeps rows out of the Parquet archive (gaps and state are still kept)."""
         self.cfg = cfg
+        self._on_row = on_row
+        self._record = record
         self.url = build_url(cfg.symbols, cfg.base_url, cfg.allowed_hosts)
         self.sink = ParquetSink(cfg.data_dir, cfg.compression)
         self.stats = RecorderStats()
@@ -213,7 +220,16 @@ class Recorder:
             return
         self._last_seq[key] = seq
         self.stats.messages[kind] += 1
-        self.sink.add(kind, row)
+        if self._record:
+            self.sink.add(kind, row)
+        if self._on_row is not None:
+            try:
+                self._on_row(kind, row)
+            except Exception as e:  # noqa: BLE001 - a consumer bug must never stop the feed
+                self.stats.hook_errors += 1
+                if self.stats.hook_errors <= 5 or self.stats.hook_errors % 1000 == 0:
+                    log.error("on_row failed", extra={"error": f"{type(e).__name__}: {e}",
+                                                      "count": self.stats.hook_errors})
 
     def _keep_reject(self, raw: str | bytes, recv_ms: int, error: str) -> None:
         """Malformed frames are never dropped silently: counted, logged, and kept on disk (capped)."""
@@ -407,6 +423,7 @@ class Recorder:
             "gaps_written": s.gaps_written,
             "duplicates": s.duplicates,
             "malformed": s.malformed,
+            **({"hook_errors": s.hook_errors} if self._on_row is not None else {}),
             "last_event_ms": s.last_event_ms,
             "last_recv_ms": s.last_recv_ms,
             "seconds_since_last_message": round((now_ms - s.last_recv_ms) / 1000, 3)

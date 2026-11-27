@@ -15,6 +15,9 @@ drift_threshold: 0.3        # Evidently drift share; drift alone never triggers 
 retrain_window_hours: 6
 promotion_metric: avg_precision
 alert_threshold: 0.5        # alert when the stress probability is at least this
+model:                      # a package in src/sentinalops/models (see docs/models.md)
+  name: gbm_v1              # used for manual training; the heal loop follows the champion's own recipe
+  params: {}
 
 symbol: BTCUSDT
 prediction_cadence_seconds: 1

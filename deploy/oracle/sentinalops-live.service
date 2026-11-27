@@ -1,0 +1,18 @@
+[Unit]
+Description=SentinalOps live pipeline (Binance feed -> features -> predictions -> outcomes -> ledger)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=/opt/sentinalops/repo
+EnvironmentFile=/etc/sentinalops.env
+ExecStart=/opt/sentinalops/venv/bin/python -m sentinalops.live --role pipeline --bus ${SENTINALOPS_BUS} --data-dir /var/lib/sentinalops/live $SENTINALOPS_LIVE_FLAGS
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

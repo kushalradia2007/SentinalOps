@@ -97,3 +97,20 @@ def test_effective_threshold_prefers_env_over_domain():
     cfg = load_domain_config(REPO_CONFIG)
     assert Settings().effective_threshold(cfg) == cfg.alert_threshold
     assert Settings(alert_threshold=0.9).effective_threshold(cfg) == 0.9
+
+
+def test_model_block_defaults_to_gbm_v1():
+    raw = _raw()
+    raw.pop("model", None)
+    cfg = DomainConfig(**raw)
+    assert cfg.model.name == "gbm_v1" and cfg.model.params == {}
+
+
+def test_unknown_model_name_rejected():
+    with pytest.raises(ValidationError, match="unknown model 'no_such_model'"):
+        DomainConfig(**{**_raw(), "model": {"name": "no_such_model"}})
+
+
+def test_yaml_model_block_loads():
+    assert _raw()["model"] == {"name": "gbm_v1", "params": {}}
+    assert load_domain_config(REPO_CONFIG).model.name == "gbm_v1"

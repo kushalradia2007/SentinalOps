@@ -38,7 +38,7 @@ def window_scores(
     ledger: Ledger, since_ms: int, until_ms: int, model_version: str | None = None
 ) -> WindowScores:
     """Scores of matured, non-void predictions made in ``[since_ms, until_ms)``."""
-    rows = [r for r in ledger.predictions(since_ms, until_ms, model_version)
+    rows = [r for r in ledger.predictions(since_ms, until_ms, model_version, with_features=False)
             if r["result"] not in ("pending", "void")]
     y = np.array([r["label"] for r in rows], dtype=float)
     p = np.array([r["probability"] for r in rows], dtype=float)

@@ -19,7 +19,7 @@ if names != get_domain_config(Settings.from_env().domain_config).feature_names:
     sys.exit(f"champion at {path} does not match the configured features")
 EOF
 then
-  echo "training baseline champion"
-  python -m sentinalops.training.train_baseline --out "$MODEL"
+  echo "training the configured model as the first champion"
+  python -m sentinalops.training.train --out "$MODEL"
 fi
 exec "$@"
