@@ -23,19 +23,19 @@ This is an early-warning and monitoring system. It is not a trading bot: it plac
 
 ## Phase A: Foundation
 - [x] 1. Repo skeleton, packaging, docker-compose, domain config **[Kushal]**
-- [ ] 2. Domain switch: config schema, event schemas, default domain, remove legacy code **[Kushal]**
-- [ ] 3. Regime-shift simulator, synthetic data, champion model, thesis test **[Kushal]**
+- [x] 2. Domain switch: config schema, event schemas, default domain, remove legacy code **[Kushal]**
+- [x] 3. Regime-shift simulator, synthetic data, champion model, thesis test **[Kushal]**
 - [x] 4. Config loader, structured logging, shared pydantic schemas **[Kushal]**
 - [x] 5. CI: ruff, pytest, GitHub Actions **[Kushal]**
 - [x] 6. Full docker compose stack comes up healthy **[Kushal]**
 
 ## Phase B: Data
-- [ ] 7. Binance stream recorder (`aggTrade` + `depth5@100ms` to Parquet) **[Vaibhav]**
+- [x] 7. Binance stream recorder (`aggTrade` + `depth5@100ms` to Parquet) **[Vaibhav]**
 - [ ] 8. Historical trade archive loader **[Yogya, mentor Vaibhav]**
 - [ ] 9. Label definition: stress events, onset rule, frozen thresholds, base-rate report **[Vaibhav]**
-- [ ] 10. Microstructure feature library (spread, depth, imbalance, intensity, volatility) **[Vaibhav]**
+- [x] 10. Microstructure feature library (spread, depth, imbalance, intensity, volatility) **[Vaibhav]**
 - [ ] 11. Feed data quality: gaps, stale data, ordering, clock skew **[Jaswanth]**
-- [ ] 12. Offline feature and label pipeline to Parquet **[Vaibhav]**
+- [x] 12. Offline feature and label pipeline to Parquet **[Vaibhav]**
 - [ ] 13. Dataset QA: base rates, embargoed temporal split, leakage checks **[Yogya, mentor Vaibhav]**
 - [ ] 14. Market regime tagging (calm, volatile, thin, directional, recovery) **[Vaibhav]**
 
@@ -44,7 +44,7 @@ This is an early-warning and monitoring system. It is not a trading bot: it plac
 - [ ] 16. Live trade producer to raw topic **[Yogya, mentor Jaswanth]**
 - [ ] 17. Live depth producer to raw topic **[Tanuj, mentor Jaswanth]**
 - [ ] 18. Feed health: reconnect, stale-data detection, prediction suspension **[Tanuj, mentor Jaswanth]**
-- [ ] 19. Stream processor: rolling features, publish, score **[Jaswanth]**
+- [x] 19. Stream processor: rolling features, publish, score **[Jaswanth]**
 - [ ] 20. Dead-letter queue, retries, idempotency, backpressure **[Jaswanth]**
 - [ ] 21. Replay simulator with speed control **[Tanuj, mentor Jaswanth]**
 
@@ -65,7 +65,7 @@ This is an early-warning and monitoring system. It is not a trading bot: it plac
 
 ## Phase F: Serving
 - [ ] 33. `/score` with online feature lookup and alias hot-reload **[Kushal]**
-- [ ] 34. Prediction ledger and outcome verifier **[Kushal]**
+- [x] 34. Prediction ledger and outcome verifier **[Kushal]**
 - [ ] 35. Alert policy, severity tiers, SHAP explanations **[Vaibhav]**
 - [ ] 36. Load testing and p99 latency targets **[Yogya, mentor Kushal]**
 
@@ -88,6 +88,11 @@ This is an early-warning and monitoring system. It is not a trading bot: it plac
 - [ ] 48. Docs: architecture diagram, runbook, ADRs **[Yogya, mentor Kushal]**
 - [ ] 49. Benchmarks and results writeup (four approaches, heal time, before/after) **[Vaibhav]**
 - [ ] 50. Demo video, resume bullets, v1.0 release **[Tanuj, mentor Kushal]**
+
+## Progress notes (2026-11-27)
+
+- **Done beyond the checkboxes:** the model slot (plug-in recipes; the heal loop retrains the champion's own recipe), live wiring (`src/sentinalops/live/`: Binance feed -> bus -> processor, verifier, ledger; heal service as its own process), a Kafka/Redpanda bus behind `--bus kafka`, and an Oracle Cloud deploy kit.
+- **Partly done:** 9 (code done; thresholds need recorded data), 15 (topics and bus; Kafka contract tests need a broker), 16-18 (one feed process instead of two producers; reconnect, stale detection and suspension done), 39 and 42-45 (logic and schedule done; MLflow, Prometheus counters and Prefect not used).
 
 ## Out of scope for v1.0
 

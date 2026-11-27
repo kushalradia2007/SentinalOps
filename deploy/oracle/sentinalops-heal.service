@@ -1,0 +1,18 @@
+[Unit]
+Description=SentinalOps heal service (retrains and promotes the champion from the prediction ledger)
+After=sentinalops-live.service
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=/opt/sentinalops/repo
+EnvironmentFile=/etc/sentinalops.env
+# One thread and low priority: a retrain must never starve the live pipeline of the second CPU.
+Environment=OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+Nice=10
+ExecStart=/opt/sentinalops/venv/bin/python -m sentinalops.live --role heal --heal-interval-min 5
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

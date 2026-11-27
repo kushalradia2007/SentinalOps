@@ -27,7 +27,7 @@ import pandas as pd
 
 from sentinalops.config import DomainConfig
 from sentinalops.labels import average_precision
-from sentinalops.training.train_baseline import fit
+from sentinalops.models import get_recipe, model_name
 
 
 @dataclass
@@ -74,11 +74,21 @@ def assemble(table: pd.DataFrame, now_ms: int, cfg: DomainConfig, seed: int = 0)
     return TrainingSet(train, holdout, older_eval, (start, now_ms), counts)
 
 
-def train_challenger(ts: TrainingSet, cfg: DomainConfig, seed: int = 0):
+def resolve_recipe(champion, cfg: DomainConfig) -> tuple[str, dict]:
+    """The recipe to retrain with: the champion's own, else (older models) the configured one."""
+    name = model_name(champion) if champion is not None else None
+    if name is None:
+        return cfg.model.name, dict(cfg.model.params)
+    return name, dict(getattr(champion, "sentinal_model_params_", {}) or {})
+
+
+def train_challenger(ts: TrainingSet, cfg: DomainConfig, seed: int = 0, champion=None):
+    """Retrain the champion's model type on the new window (heal never switches model types)."""
     if ts.train.empty or ts.train["label"].nunique() < 2:
         raise ValueError("training window has no positive or no negative labels")
     data = ts.train.assign(label=ts.train["label"].astype(int))
-    return fit(data[[*cfg.feature_names, "label"]], seed)
+    name, params = resolve_recipe(champion, cfg)
+    return get_recipe(name).fit(data[[*cfg.feature_names, "label"]], cfg, seed, params)
 
 
 # ---- gates (chunk 44) -----------------------------------------------------------------------------

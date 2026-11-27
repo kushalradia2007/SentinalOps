@@ -213,6 +213,50 @@ def test_heal_loop_recovers_from_a_regime_shift(tmp_path, calm_model):
     assert min(healed) > 0.45 and sum(healed) / len(healed) > worst + 0.35, "and recover after healing"
     report = (reg.root / "reports" / f"{reg.state().champion}.md").read_text()
     assert "PASSED" in report
+    healed_versions = [v for v, m in reg.state().versions.items() if m.get("source") == "heal"]
+    assert healed_versions and all(reg.meta(v)["model_name"] == "gbm_v1" for v in healed_versions)
+
+
+# ---- the model slot: heal retrains the champion's own recipe ---------------------------------------
+class _LogitRecipe:
+    name = "logit_test"
+
+    def fit(self, train, cfg, seed=0, params=None):
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        from sentinalops.models.base import stamp
+
+        model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=500))
+        model.fit(train[cfg.feature_names], train["label"].astype(int))
+        return stamp(model, self.name, params or {})
+
+
+LOGIT = _LogitRecipe()
+
+
+def test_heal_retrains_champion_recipe_not_config(monkeypatch):
+    from sentinalops import models
+    from sentinalops.heal.retrain import resolve_recipe
+
+    monkeypatch.setitem(models._RECIPES, "logit_test", f"{__name__}:LOGIT")
+    table = S.market([("calm", 60)], T0)
+    ts = assemble(table, T0 + 60 * MIN, CFG)
+    champion = LOGIT.fit(ts.train, CFG)
+    assert CFG.model.name == "gbm_v1"  # the config names another recipe
+    assert resolve_recipe(champion, CFG) == ("logit_test", {})
+    challenger = train_challenger(ts, CFG, champion=champion)
+    assert models.model_name(challenger) == "logit_test"
+
+
+def test_unstamped_champion_falls_back_to_config():
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    from sentinalops.heal.retrain import resolve_recipe
+
+    assert resolve_recipe(HistGradientBoostingClassifier(), CFG) == ("gbm_v1", {})
+    assert resolve_recipe(None, CFG) == ("gbm_v1", {})
 
 
 def test_bad_promotion_is_rolled_back_after_the_shadow_period(tmp_path, calm_model, volatile_model):

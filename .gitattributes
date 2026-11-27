@@ -1,0 +1,5 @@
+# Linux-side files must keep LF even in Windows checkouts (bash and systemd reject CRLF).
+*.sh text eol=lf
+*.service text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

@@ -23,8 +23,12 @@ MODEL_PATH = Path("models/champion.joblib")
 
 
 def fit(df: pd.DataFrame, seed: int = 0) -> HistGradientBoostingClassifier:
-    model = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.08, random_state=seed)
-    return model.fit(df[FEATURE_ORDER], df["label"])
+    """The ``gbm_v1`` recipe on the default features (kept for existing callers)."""
+    from types import SimpleNamespace
+
+    from sentinalops.models import get_recipe
+
+    return get_recipe("gbm_v1").fit(df, SimpleNamespace(feature_names=FEATURE_ORDER), seed)
 
 
 def evaluate(model, df: pd.DataFrame) -> float:

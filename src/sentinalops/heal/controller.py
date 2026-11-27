@@ -115,9 +115,12 @@ class HealController:
         self.registry.log_event(now_ms, "heal_attempt", champion=champion, matured=decision.matured,
                                 live_ap=decision.degradation.current.ap)
         ts = assemble(self.load_table(now_ms), now_ms, self.cfg, self.seed)
-        challenger = train_challenger(ts, self.cfg, self.seed)
-        report = evaluate_gates(self.registry.load(champion), challenger, ts, self.cfg)
+        champion_model = self.registry.load(champion)
+        challenger = train_challenger(ts, self.cfg, self.seed, champion=champion_model)
+        report = evaluate_gates(champion_model, challenger, ts, self.cfg)
         version = self.registry.register(challenger, {
+            "model_name": getattr(challenger, "sentinal_model_name_", None),
+            "params": getattr(challenger, "sentinal_model_params_", {}),
             "holdout_ap": report.challenger["current"]["ap"], "source": "heal", "parent": champion,
             "window": list(ts.window), "counts": ts.counts, "gates_passed": report.passed,
         }, now_ms)

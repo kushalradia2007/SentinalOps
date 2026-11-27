@@ -177,3 +177,38 @@ def test_restart_is_recorded_as_a_gap(tmp_path):
 def test_recorder_refuses_hosts_outside_the_allowlist(tmp_path):
     with pytest.raises(ValueError):
         Recorder(RecorderConfig(data_dir=tmp_path, base_url="wss://example.com"))
+
+
+def _rec(tmp_path, **kw) -> Recorder:
+    cfg = RecorderConfig(symbols=("BTCUSDT",), data_dir=tmp_path, base_url="ws://127.0.0.1:1",
+                         allowed_hosts=LOCAL)
+    return Recorder(cfg, **kw)
+
+
+def test_on_row_called_once_per_deduplicated_row(tmp_path):
+    seen = []
+    rec = _rec(tmp_path, on_row=lambda kind, row: seen.append((kind, row["symbol"])))
+    rec.handle(depth_frame(5), T0)
+    rec.handle(depth_frame(5), T0 + 100)  # duplicate update id
+    rec.handle(trade_frame(1), T0 + 150)
+    assert seen == [(DEPTH5, "BTCUSDT"), (AGG_TRADE, "BTCUSDT")]
+    assert rec.stats.duplicates == 1
+
+
+def test_record_false_writes_no_rows(tmp_path):
+    rec = _rec(tmp_path, on_row=lambda kind, row: None, record=False)
+    rec.handle(depth_frame(5), T0)
+    rec.handle(trade_frame(1), T0 + 150)
+    rec.sink.flush()
+    assert not list(tmp_path.glob("stream=*/**/*.parquet"))
+    assert rec.stats.messages[DEPTH5] == 1
+
+
+def test_on_row_errors_never_stop_the_recorder(tmp_path):
+    def boom(kind, row):
+        raise RuntimeError("consumer bug")
+
+    rec = _rec(tmp_path, on_row=boom)
+    rec.handle(depth_frame(5), T0)
+    rec.handle(depth_frame(6), T0 + 100)
+    assert rec.stats.hook_errors == 2 and rec.sink.buffered_rows == 2
