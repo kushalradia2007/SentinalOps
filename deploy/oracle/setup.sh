@@ -31,7 +31,9 @@ sudo apt-get install -y -qq git python3-venv python3-pip sqlite3 >/dev/null
 
 echo "== 2/7 code in $REPO (branch $BRANCH)"
 sudo mkdir -p "$BASE" "$STATE"/{models,data,live}
-sudo chown -R "$ME":"$ME" "$BASE" "$STATE"
+# not all of $STATE: $STATE/redpanda belongs to the Redpanda container (uid 101)
+sudo chown "$ME":"$ME" "$STATE"
+sudo chown -R "$ME":"$ME" "$BASE" "$STATE"/{models,data,live}
 if [ -d "$REPO/.git" ]; then
   git -C "$REPO" fetch -q origin "$BRANCH" && git -C "$REPO" checkout -q "$BRANCH" && git -C "$REPO" pull -q --ff-only
 else
@@ -66,6 +68,11 @@ if [ "$REDPANDA" = 1 ]; then
   fi
   sudo mkdir -p "$STATE/redpanda" && sudo chown 101:101 "$STATE/redpanda"
   sudo docker compose -f "$REPO/deploy/oracle/redpanda-compose.yml" up -d
+  echo "waiting for Redpanda on 127.0.0.1:9092"
+  for _ in $(seq 1 60); do
+    if (exec 3<>/dev/tcp/127.0.0.1/9092) 2>/dev/null; then break; fi
+    sleep 2
+  done
   BUS=kafka
 fi
 

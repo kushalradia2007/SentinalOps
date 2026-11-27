@@ -8,6 +8,7 @@ Until recorded data flows through chunk 12, training uses the synthetic regimes 
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import joblib
@@ -49,9 +50,12 @@ def main(argv: list[str] | None = None) -> None:
     ap_.add_argument("--rows", type=int, default=20_000)
     args = ap_.parse_args(argv)
     model, ap = train(make_ticks("calm", args.rows))
+    model.sentinal_holdout_ap_ = ap  # the heal loop's reference; without it healing never triggers
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model, out)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    joblib.dump(model, tmp)
+    os.replace(tmp, out)
     print(f"champion saved to {out}  (calm-regime AP={ap:.3f})")
     try:
         import mlflow

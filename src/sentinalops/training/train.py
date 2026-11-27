@@ -83,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_domain_config(args.config)
     name = args.model or cfg.model.name
     params = json.loads(args.params) if args.params else dict(cfg.model.params)
+    if not isinstance(params, dict):
+        ap.error("--params must be a JSON object, e.g. '{\"max_iter\": 300}'")
     model, holdout_ap, n = train(load_data(args.data, args.rows), cfg, name, params, args.seed)
 
     out = Path(args.out)

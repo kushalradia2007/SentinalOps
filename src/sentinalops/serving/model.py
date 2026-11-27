@@ -23,6 +23,7 @@ class ChampionModel:
         self.feature_order = list(feature_order)
         self._model = None
         self._mtime = 0.0
+        self._stamp: tuple | None = None  # (mtime_ns, inode, size): a same-second swap still differs
         self._lock = threading.Lock()
 
     @property
@@ -33,13 +34,14 @@ class ChampionModel:
         """(model, version), reloading if the file changed. Raises ``ModelUnavailable``."""
         if not self.path.exists():
             raise ModelUnavailable("model not available")
-        mtime = self.path.stat().st_mtime
+        st = self.path.stat()
+        mtime, stamp = st.st_mtime, (st.st_mtime_ns, st.st_ino, st.st_size)
         with self._lock:
-            if self._model is None or mtime != self._mtime:
+            if self._model is None or stamp != self._stamp:
                 model = joblib.load(self.path)
                 if list(getattr(model, "feature_names_in_", [])) != self.feature_order:
                     raise ModelUnavailable("model inputs do not match the configured features")
-                self._model, self._mtime = model, mtime
+                self._model, self._mtime, self._stamp = model, mtime, stamp
             # The registry stamps a version on the model object, so it always matches the file read.
             return self._model, getattr(self._model, "sentinal_version_", f"champion-{int(self._mtime)}")
 

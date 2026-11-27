@@ -26,7 +26,7 @@ class _Recipe:
         self, train: pd.DataFrame, cfg: DomainConfig, seed: int = 0, params: dict[str, Any] | None = None
     ) -> HistGradientBoostingClassifier:
         params = dict(params or {})
-        model = HistGradientBoostingClassifier(**{**DEFAULTS, **params}, random_state=seed)
+        model = HistGradientBoostingClassifier(**{**DEFAULTS, "random_state": seed, **params})
         model.fit(train[cfg.feature_names], train["label"].astype(int))
         return stamp(model, NAME, params)
 

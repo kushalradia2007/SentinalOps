@@ -1,6 +1,7 @@
 """The self-healing loop (chunks 39, 42-45)."""
 
 import math
+import sys
 
 import joblib
 import pandas as pd
@@ -289,3 +290,56 @@ def test_processor_scores_with_the_shadow_model_too(tmp_path, calm_model, volati
     preds = [m for k, r in events for topic, m in proc.on_event(k, r) if topic == PREDICTIONS_TOPIC]
     assert preds and {p.model_version for p in preds} == {"v001", "v002"}
     assert proc.stats.shadow_predictions == proc.stats.predictions
+
+
+# ---- review fixes ---------------------------------------------------------------------------------
+def test_average_precision_handles_ties_like_sklearn():
+    import numpy as np
+    from sklearn.metrics import average_precision_score
+
+    from sentinalops.labels import average_precision
+
+    const = np.full(4, 0.5)
+    assert average_precision(np.array([1, 1, 0, 0]), const) == pytest.approx(0.5)
+    assert average_precision(np.array([0, 0, 1, 1]), const) == pytest.approx(0.5)  # order-independent
+    rng = np.random.default_rng(0)
+    y = rng.binomial(1, 0.2, 500)
+    s = rng.integers(0, 5, 500) / 4  # heavy ties, like a step-function calibrator
+    assert average_precision(y, s) == pytest.approx(average_precision_score(y, s))
+    assert math.isnan(average_precision(np.zeros(5), np.ones(5)))
+
+
+def test_replay_and_older_eval_are_separated_in_time():
+    """Neighbouring seconds share their 30 s outcome window, so a random split would leak."""
+    import numpy as np
+
+    table = S.market([("calm", 60), ("volatile", 60), ("calm", 60)], T0)
+    ts = assemble(table, T0 + 180 * MIN, CFG, seed=1)
+    replay = ts.train[ts.train["ts_ms"] < T0 + 120 * MIN]["ts_ms"].to_numpy()
+    held = np.sort(ts.older_eval["ts_ms"].to_numpy())
+    assert len(replay) and len(held)
+    i = np.clip(np.searchsorted(held, replay), 1, len(held) - 1)
+    nearest = np.minimum(np.abs(held[i] - replay), np.abs(held[i - 1] - replay))
+    assert nearest.min() >= CFG.split_embargo_seconds * 1000
+    assert set(ts.older_eval["regime"]) == {"calm", "volatile"}
+
+
+def test_train_challenger_gives_recipes_the_timestamps(monkeypatch):
+    from sentinalops import models
+
+    seen = {}
+
+    class Spy(_LogitRecipe):
+        name = "spy_test"
+
+        def fit(self, train, cfg, seed=0, params=None):
+            seen["columns"] = list(train.columns)
+            return super().fit(train, cfg, seed, params)
+
+    monkeypatch.setattr(sys.modules[__name__], "SPY", Spy(), raising=False)
+    monkeypatch.setitem(models._RECIPES, "spy_test", f"{__name__}:SPY")
+    table = S.market([("calm", 60)], T0)
+    ts = assemble(table, T0 + 60 * MIN, CFG)
+    champion = models.base.stamp(LOGIT.fit(ts.train, CFG), "spy_test", {})
+    train_challenger(ts, CFG, champion=champion)
+    assert "ts_ms" in seen["columns"] and "regime" in seen["columns"]

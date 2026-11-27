@@ -12,8 +12,10 @@ Split, for a retrain at ``now_ms``::
 - **Embargo:** ``split_embargo_seconds`` (>= the label horizon) between train and holdout, so
   no training label looks into the holdout period.
 - **Replay buffer:** a sample of rows older than the window, spread evenly over regimes, so
-  the challenger does not forget regimes it has not seen lately. ``older_eval`` is a disjoint
-  sample of the same, used by the no-regression gate.
+  the challenger does not forget regimes it has not seen lately. ``older_eval`` (the
+  no-regression gate) comes from different 10-minute blocks of the same period, and the last
+  ``split_embargo_seconds`` of every block are dropped: neighbouring seconds share their 30 s
+  outcome window, so a row-level random split would leak training outcomes into the gate.
 """
 
 from __future__ import annotations
@@ -39,6 +41,19 @@ class TrainingSet:
     counts: dict = field(default_factory=dict)
 
 
+BLOCK_MS = 600_000  # older rows alternate between replay and older_eval in blocks this long
+
+
+def _split_older(older: pd.DataFrame, embargo_ms: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(replay pool, older_eval): alternating time blocks with an embargo at every block edge."""
+    if older.empty:
+        return older, older
+    offset = older["ts_ms"] - int(older["ts_ms"].min())
+    block = offset // BLOCK_MS
+    keep = (offset - block * BLOCK_MS) < BLOCK_MS - embargo_ms
+    return older[keep & (block % 2 == 0)], older[keep & (block % 2 == 1)]
+
+
 def _sample_by_regime(df: pd.DataFrame, n: int, rng: np.random.Generator) -> pd.DataFrame:
     if n <= 0 or df.empty:
         return df.iloc[:0]
@@ -60,10 +75,8 @@ def assemble(table: pd.DataFrame, now_ms: int, cfg: DomainConfig, seed: int = 0)
 
     rng = np.random.default_rng(seed)
     n_replay = int(len(train_recent) * h.replay_fraction)
-    older_shuffled = older.sample(frac=1.0, random_state=seed) if len(older) else older
-    half = len(older_shuffled) // 2
-    replay = _sample_by_regime(older_shuffled.iloc[:half], n_replay, rng)
-    older_eval = older_shuffled.iloc[half:]
+    pool, older_eval = _split_older(older, cfg.split_embargo_seconds * 1000)
+    replay = _sample_by_regime(pool, n_replay, rng)
     train = pd.concat([train_recent, replay]).sort_values("ts_ms")
     counts = {
         "train_recent": len(train_recent), "replay": len(replay), "holdout": len(holdout),
@@ -88,7 +101,9 @@ def train_challenger(ts: TrainingSet, cfg: DomainConfig, seed: int = 0, champion
         raise ValueError("training window has no positive or no negative labels")
     data = ts.train.assign(label=ts.train["label"].astype(int))
     name, params = resolve_recipe(champion, cfg)
-    return get_recipe(name).fit(data[[*cfg.feature_names, "label"]], cfg, seed, params)
+    # Timestamps and regimes go along, so recipes can calibrate on a later slice after an embargo.
+    extra = [c for c in ("ts_ms", "regime") if c in data]
+    return get_recipe(name).fit(data[[*cfg.feature_names, "label", *extra]], cfg, seed, params)
 
 
 # ---- gates (chunk 44) -----------------------------------------------------------------------------

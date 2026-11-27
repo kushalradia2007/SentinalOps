@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     features      TEXT
 );
 CREATE INDEX IF NOT EXISTS predictions_time ON predictions (symbol, ts_ms);
+CREATE INDEX IF NOT EXISTS predictions_ts ON predictions (ts_ms, model_version);
 CREATE TABLE IF NOT EXISTS outcomes (
     symbol         TEXT    NOT NULL,
     ts_ms          INTEGER NOT NULL,
@@ -49,6 +50,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
     verified_at_ms INTEGER NOT NULL,
     PRIMARY KEY (symbol, ts_ms, horizon_s)
 );
+CREATE INDEX IF NOT EXISTS outcomes_ts ON outcomes (ts_ms);
 CREATE TRIGGER IF NOT EXISTS predictions_append_only BEFORE UPDATE ON predictions
 BEGIN SELECT RAISE(ABORT, 'ledger is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS predictions_no_delete BEFORE DELETE ON predictions
@@ -224,7 +226,7 @@ class Ledger:
         """Confusion table and Brier score for predictions made in ``[since_ms, until_ms)``."""
         s = Scores()
         sq_err, positives = 0.0, 0
-        for r in self.predictions(since_ms, until_ms, model_version):
+        for r in self.predictions(since_ms, until_ms, model_version, with_features=False):
             setattr(s, r["result"], getattr(s, r["result"]) + 1)
             if r["result"] in ("pending", "void"):
                 continue

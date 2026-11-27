@@ -119,7 +119,9 @@ class InMemoryBus:
         await asyncio.gather(*(s.queue.join() for s in self._subs))
 
     async def close(self) -> None:
-        """Subscribers get what was already published, then their iteration ends."""
+        """Subscribers get what was already published, then their iteration ends. Idempotent."""
+        if self._closed:
+            return
         self._closed = True
         for sub in self._subs:
             sub.queue.put_nowait(_CLOSED)
