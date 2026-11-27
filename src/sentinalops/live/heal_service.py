@@ -72,9 +72,10 @@ class HealService:
     def health(self) -> dict:
         s, r = self.registry.state(), self.last
         d = r.decision if r else None
+        ap = d.degradation.current.ap if d and d.degradation else None
         return {"champion": s.champion, "shadow": s.shadow, "action": r.action if r else None,
                 "reason": d.reason if d else None, "matured": d.matured if d else None,
-                "live_ap": d.degradation.current.ap if d and d.degradation else None,
+                "live_ap": None if ap is None or math.isnan(ap) else ap,  # strict JSON: no NaN
                 "promotions": self.registry.count("promote"), "rollbacks": self.registry.count("rollback")}
 
 

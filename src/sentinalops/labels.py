@@ -207,14 +207,22 @@ def fit_thresholds(
 
 
 def average_precision(y: np.ndarray, score: np.ndarray) -> float:
-    """Area under the precision-recall curve (step-wise), ties broken pessimistically by order."""
+    """Area under the precision-recall curve (step-wise), as scikit-learn computes it.
+
+    Tied scores form one threshold, so the result never depends on row order (constant or
+    step-function scores tie a lot). NaN when there are no positives.
+    """
     y = np.asarray(y, dtype=float)
     if y.sum() == 0:
         return float("nan")
-    order = np.argsort(-np.asarray(score, dtype=float), kind="stable")
-    hits = y[order]
-    precision = np.cumsum(hits) / np.arange(1, len(hits) + 1)
-    return float((precision * hits).sum() / hits.sum())
+    s = np.asarray(score, dtype=float)
+    order = np.argsort(-s, kind="stable")
+    s, y = s[order], y[order]
+    last_of_each_score = np.r_[np.diff(s) != 0, True]
+    tp = np.cumsum(y)[last_of_each_score]
+    fp = np.cumsum(1 - y)[last_of_each_score]
+    recall = tp / tp[-1]
+    return float(np.sum(np.diff(np.r_[0.0, recall]) * tp / (tp + fp)))
 
 
 def _episodes(confirmed: pd.Series) -> list[tuple[int, int]]:

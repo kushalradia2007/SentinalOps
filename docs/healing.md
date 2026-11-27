@@ -31,7 +31,7 @@ From the chunk 12 training table (`label_status == 'ok'` rows only):
 
 - **Recent window:** the last `retrain_window_hours`.
 - **Holdout:** the newest `holdout_fraction` of the window, after a `split_embargo_seconds` gap (at least the label horizon) so no training label looks into it.
-- **Replay buffer:** older rows, `replay_fraction` of the recent training rows, spread evenly over regimes so the challenger does not forget them. A disjoint older sample is kept for the regression gate.
+- **Replay buffer:** older rows, `replay_fraction` of the recent training rows, spread evenly over regimes so the challenger does not forget them. The regression gate uses older rows from *other* 10-minute blocks, with the last `split_embargo_seconds` of every block dropped, because neighbouring seconds share their 30 s outcome window and a random split would leak.
 
 ## Gates (chunk 44)
 

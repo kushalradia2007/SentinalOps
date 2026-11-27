@@ -4,7 +4,7 @@ install:
 test:
 	pytest -q
 train:
-	python -m sentinalops.training.train_baseline
+	python -m sentinalops.training.train
 api:
 	uvicorn sentinalops.serving.app:create_app --factory --reload
 record:

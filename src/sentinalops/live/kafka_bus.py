@@ -9,7 +9,10 @@ message on its topics, in order per topic (one partition per topic). Differences
 - A new group starts at the newest message (``auto_offset_reset='latest'``): a live forecaster has
   no use for a backlog from before it existed.
 - ``subscribe`` returns only after partitions are assigned, so nothing published afterwards is missed.
-- ``close`` lets each subscriber read up to the end offsets it saw at close time, then ends it.
+- ``close`` lets each subscriber read up to the end offsets it saw at close time (for at most
+  ``close_timeout_s``), then stops every consumer, including ones nobody is iterating.
+- Records from one fetch are merged across topics by ``recv_time_ms``, so after consumer lag the
+  depth and trade streams reach the processor interleaved rather than one topic far ahead.
 
 Topics are created on first use with one partition; raw topics keep at most ``raw_retention_bytes``.
 """
@@ -34,6 +37,14 @@ def decode(raw: bytes) -> dict:
     return json.loads(raw)
 
 
+def _merge(batches: dict) -> list[Message]:
+    """One fetch's records, interleaved across topics by receive time (stable within a topic)."""
+    msgs = [(tp.topic, decode(r.value)) for tp, records in batches.items() for r in records]
+    if len(batches) > 1:
+        msgs.sort(key=lambda m: m[1].get("recv_time_ms", 0))
+    return msgs
+
+
 def _aiokafka():
     try:
         import aiokafka
@@ -49,6 +60,7 @@ class _KafkaSubscription:
         self._buffer: list[Message] = []
         self._stop_at: dict | None = None  # end offsets captured when the bus closed
         self._positions: dict = {}
+        self.done = asyncio.Event()
 
     def __aiter__(self) -> _KafkaSubscription:
         return self
@@ -61,20 +73,22 @@ class _KafkaSubscription:
                 self._positions = {tp: await self.consumer.position(tp) for tp in self._stop_at}
                 if all(self._positions[tp] >= end for tp, end in self._stop_at.items()):
                     await self.consumer.stop()
+                    self.done.set()
                     raise StopAsyncIteration
-            batches = await self.consumer.getmany(timeout_ms=200)
-            for tp, records in batches.items():
-                self._buffer += [(tp.topic, decode(r.value)) for r in records]
+            self._buffer += _merge(await self.consumer.getmany(timeout_ms=200))
         return self._buffer.pop(0)
 
 
 class KafkaBus:
     def __init__(self, broker: str, client_id: str = "sentinalops",
-                 raw_retention_bytes: int = 5 * 2**30) -> None:
+                 raw_retention_bytes: int = 5 * 2**30, assign_timeout_s: float = 60.0,
+                 close_timeout_s: float = 10.0) -> None:
         self._ak = _aiokafka()
         self.broker, self.client_id = broker, client_id
         self.raw_retention_bytes = raw_retention_bytes
+        self.assign_timeout_s, self.close_timeout_s = assign_timeout_s, close_timeout_s
         self.closing = False
+        self._subs: list[_KafkaSubscription] = []
         self.drops: dict[str, int] = {}  # the in-memory overflow counter has no Kafka equivalent
         self._producer = None
         self._consumers: list = []
@@ -128,14 +142,30 @@ class KafkaBus:
         await consumer.start()
         consumer.subscribe(topics=list(topics), listener=_Listener())
         sub = _KafkaSubscription(self, consumer)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.assign_timeout_s
         while not assigned.is_set():  # polling drives the group join; keep whatever arrives
-            batches = await consumer.getmany(timeout_ms=100)
-            for tp, records in batches.items():
-                sub._buffer += [(tp.topic, decode(r.value)) for r in records]
+            if loop.time() > deadline:
+                await consumer.stop()
+                raise RuntimeError(f"no partitions assigned to group {self.client_id}-{group} within "
+                                   f"{self.assign_timeout_s:.0f} s; is the broker at {self.broker} up?")
+            sub._buffer += _merge(await consumer.getmany(timeout_ms=100))
         self._consumers.append(consumer)
+        self._subs.append(sub)
         return sub
 
     async def close(self) -> None:
         self.closing = True
         if self._producer is not None:
             await self._producer.stop()
+        pending = [s.done.wait() for s in self._subs if not s.done.is_set()]
+        if pending:  # give active readers time to reach the end offsets
+            try:
+                await asyncio.wait_for(asyncio.gather(*pending), self.close_timeout_s)
+            except TimeoutError:
+                pass
+        for consumer in self._consumers:  # then stop every consumer, iterated or not
+            try:
+                await consumer.stop()
+            except Exception as e:  # noqa: BLE001 - already stopped or broker gone
+                log.debug("consumer stop failed", extra={"error": repr(e)})

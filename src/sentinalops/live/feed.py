@@ -48,12 +48,24 @@ class BinanceFeed:
         self.recorder.request_stop()
 
     async def run(self) -> None:
-        pump = asyncio.create_task(self._pump())
+        """Record and publish until stopped. If publishing fails, stop and raise (systemd restarts)."""
+        pump = asyncio.create_task(self._pump(), name="feed-pump")
+        rec = asyncio.create_task(self.recorder.run(), name="feed-recorder")
         try:
-            await self.recorder.run()
+            done, _ = await asyncio.wait({pump, rec}, return_when=asyncio.FIRST_COMPLETED)
+            if pump in done:  # the pump only ends by failing: never keep recording into a dead bus
+                self.recorder.request_stop()
+                await asyncio.gather(rec, return_exceptions=True)
+                pump.result()
+                raise RuntimeError("feed pump stopped unexpectedly")
+            rec.result()
             while not self._queue.empty() and not pump.done():  # deliver what was already received
                 await asyncio.sleep(0.01)
+            if pump.done():
+                pump.result()
         finally:
-            pump.cancel()
+            for t in (pump, rec):
+                if not t.done():
+                    t.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await pump
+                await asyncio.gather(pump, rec, return_exceptions=True)
