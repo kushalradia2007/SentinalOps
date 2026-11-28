@@ -14,6 +14,8 @@ from sentinalops.models.base import Recipe
 
 _RECIPES: dict[str, str] = {
     "gbm_v1": "sentinalops.models.gbm_v1:recipe",
+    "persistence_v1": "sentinalops.models.persistence_v1:recipe",
+    "logit_v1": "sentinalops.models.logit_v1:recipe",
 }
 
 
