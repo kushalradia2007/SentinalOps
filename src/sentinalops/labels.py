@@ -111,8 +111,8 @@ def to_ticks(state: pd.DataFrame, p: LabelParams = LabelParams()) -> pd.DataFram
 
 
 # ---- 3. stress state (causal) ----------------------------------------------------------
-def add_stress(ticks: pd.DataFrame, p: LabelParams = LabelParams()) -> pd.DataFrame:
-    """Add the trailing reference and the stress state. Uses only ticks at or before each row."""
+def add_reference(ticks: pd.DataFrame, p: LabelParams = LabelParams()) -> pd.DataFrame:
+    """Add the trailing reference and the depth/spread ratios. Independent of the thresholds."""
     out = ticks.copy()
     roll = dict(window=p.reference_ticks, min_periods=min(p.min_reference_ticks, p.reference_ticks))
     # shift(1): the reference for tick t is built from ticks strictly before t
@@ -120,7 +120,15 @@ def add_stress(ticks: pd.DataFrame, p: LabelParams = LabelParams()) -> pd.DataFr
     out["ref_spread"] = out["rel_spread"].rolling(**roll).median().shift(1)
     out["depth_ratio"] = out["depth_top5"] / out["ref_depth"]
     out["spread_ratio"] = out["rel_spread"] / out["ref_spread"]
+    return out
 
+
+def apply_thresholds(ref: pd.DataFrame, p: LabelParams = LabelParams()) -> pd.DataFrame:
+    """Stress state from the ratios of ``add_reference`` and the thresholds in ``p``.
+
+    Split from the reference so the evaluation can refit thresholds per fold cheaply.
+    """
+    out = ref.copy()
     known = out["depth_ratio"].notna() & out["spread_ratio"].notna()
     depth_hit = out["depth_ratio"] < p.depth_fraction
     spread_hit = (out["spread_ratio"] > p.spread_multiple) & p.use_spread
@@ -130,6 +138,11 @@ def add_stress(ticks: pd.DataFrame, p: LabelParams = LabelParams()) -> pd.DataFr
     # confirmed at t = stressed at each of the last `confirm_ticks` ticks (NaN if any is unknown)
     out["confirmed"] = out["stressed"].rolling(p.confirm_ticks, min_periods=p.confirm_ticks).min()
     return out
+
+
+def add_stress(ticks: pd.DataFrame, p: LabelParams = LabelParams()) -> pd.DataFrame:
+    """Add the trailing reference and the stress state. Uses only ticks at or before each row."""
+    return apply_thresholds(add_reference(ticks, p), p)
 
 
 # ---- 4. forward labels -----------------------------------------------------------------
