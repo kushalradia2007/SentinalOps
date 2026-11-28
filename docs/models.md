@@ -40,3 +40,17 @@ Pickles refer to classes by import path. Never change a package once models trai
 | Name | What | Notes |
 |---|---|---|
 | `gbm_v1` | scikit-learn `HistGradientBoostingClassifier(max_iter=200, learning_rate=0.08)` | The original champion; pickles depend on scikit-learn only |
+| `persistence_v1` | fixed rank score from `depth_change_30s`, `depth_change_60s`, `spread_change_60s` | No learning; the heal gate's bar. Not a probability |
+| `logit_v1` | standardised, class-weighted logistic regression on 34 + derived features | Isotonic-calibrated when the data allows |
+| `gbm_v2` | `HistGradientBoostingClassifier` (400 iterations, early stopping) on 34 + derived features | Isotonic-calibrated when the data allows |
+| `lgbm_v1` | LightGBM on 34 + derived features | Trains on `OMP_NUM_THREADS` threads (all cores if unset), predicts single-threaded; needs `libgomp1` |
+
+Shared building blocks in `models/common/` (`derived_v1.py`, `array_model_v1.py`) are **frozen too**: pickles import them by path. New derived features go in `derived_v2.py`, never in an edit of `derived_v1.py`.
+
+## Comparing models
+
+```bash
+python -m sentinalops.training.evaluate --data-dir data/raw/binance --folds 4 --stress-share 0.01
+```
+
+The command walks forward through the recording with a 60 s embargo, fits the label thresholds on each training period only, and scores every model against the `base_rate` and `persistence_offline` baselines. It writes `docs/results.md` and `reports/eval-*.json`. With less than 14 days of data the results are marked PRELIMINARY. Record the champion in `docs/model-card.md`.

@@ -92,6 +92,7 @@ This is an early-warning and monitoring system. It is not a trading bot: it plac
 ## Progress notes (2026-11-27)
 
 - **Done beyond the checkboxes:** the model slot (plug-in recipes; the heal loop retrains the champion's own recipe), live wiring (`src/sentinalops/live/`: Binance feed -> bus -> processor, verifier, ledger; heal service as its own process), a Kafka/Redpanda bus behind `--bus kafka`, and an Oracle Cloud deploy kit.
+- **Evaluation layer (2026-11-28):** metrics suite, walk-forward splits with embargo, per-fold label thresholds, `persistence_v1`/`logit_v1`/`gbm_v2`/`lgbm_v1`, the `evaluate` command and the persistence gate. Chunks 26, 30 and 31 are done except MLflow logging and a cost-based threshold.
 - **Partly done:** 9 (code done; thresholds need recorded data), 15 (topics and bus; Kafka contract tests need a broker), 16-18 (one feed process instead of two producers; reconnect, stale detection and suspension done), 39 and 42-45 (logic and schedule done; MLflow, Prometheus counters and Prefect not used).
 
 ## Out of scope for v1.0
