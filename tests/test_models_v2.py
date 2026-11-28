@@ -16,7 +16,7 @@ from sentinalops.simulator.regimes import make_ticks
 CFG = get_domain_config()
 NAMES = CFG.feature_names
 T0 = 1_763_200_800_000
-NEW = ["persistence_v1", "logit_v1"]
+NEW = ["persistence_v1", "logit_v1", "gbm_v2", "lgbm_v1"]
 
 
 @pytest.fixture(scope="module")
@@ -77,3 +77,38 @@ def test_predict_proba_accepts_one_row_dataframe(timed):
     model = get_recipe("logit_v1").fit(timed, CFG)
     one = pd.DataFrame([timed.iloc[5][NAMES].to_dict()])
     assert model.predict_proba(one).shape == (1, 2)
+
+
+def test_lgbm_predicts_single_threaded(timed):
+    model = get_recipe("lgbm_v1").fit(timed, CFG)
+    assert model.estimator.get_params()["n_jobs"] == 1
+
+
+def test_lgbm_fit_threads_follow_omp_num_threads(monkeypatch):
+    from sentinalops.models.lgbm_v1 import fit_threads
+
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    assert fit_threads() == 1
+    monkeypatch.delenv("OMP_NUM_THREADS")
+    assert fit_threads() == -1
+
+
+@pytest.mark.parametrize("name", ["logit_v1", "gbm_v2", "lgbm_v1", "persistence_v1"])
+def test_latency_is_reasonable(name, timed, tmp_path):
+    from sentinalops.training.metrics import latency_ms
+
+    path = tmp_path / "m.joblib"
+    joblib.dump(get_recipe(name).fit(timed, CFG), path)
+    rows = [{k: float(v) for k, v in r.items()} for r in timed[NAMES].head(50).to_dict("records")]
+    lat = latency_ms(ChampionModel(path, NAMES), rows, n=200, warmup=20)
+    assert lat["p99"] < 25, lat  # buffer for shared CI runners; evaluate.py flags > 10 ms
+
+
+def test_dockerfile_and_setup_install_libgomp():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    assert "libgomp1" in (root / "Dockerfile").read_text(encoding="utf-8")
+    assert "libgomp1" in (root / "deploy" / "oracle" / "setup.sh").read_text(encoding="utf-8")
+    deps = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"lightgbm>=4.3"' in deps

@@ -35,3 +35,5 @@ jobs:
         run: docker compose config -q
       - name: Build API image
         run: docker build -t sentinalops-api .
+      - name: Image can load LightGBM (needs libgomp1)
+        run: docker run --rm --entrypoint python sentinalops-api -c "import lightgbm; print(lightgbm.__version__)"

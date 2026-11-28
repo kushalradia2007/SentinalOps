@@ -27,7 +27,7 @@ ME="$(id -un)"
 
 echo "== 1/7 packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq git python3-venv python3-pip sqlite3 >/dev/null
+sudo apt-get install -y -qq git python3-venv python3-pip sqlite3 libgomp1 >/dev/null
 
 echo "== 2/7 code in $REPO (branch $BRANCH)"
 sudo mkdir -p "$BASE" "$STATE"/{models,data,live}

@@ -16,6 +16,8 @@ _RECIPES: dict[str, str] = {
     "gbm_v1": "sentinalops.models.gbm_v1:recipe",
     "persistence_v1": "sentinalops.models.persistence_v1:recipe",
     "logit_v1": "sentinalops.models.logit_v1:recipe",
+    "gbm_v2": "sentinalops.models.gbm_v2:recipe",
+    "lgbm_v1": "sentinalops.models.lgbm_v1:recipe",
 }
 
 

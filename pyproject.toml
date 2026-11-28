@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Self-healing streaming ML platform that forecasts crypto market liquidity stress"
 requires-python = ">=3.11"
 dependencies = [
-  "numpy", "pandas", "scikit-learn", "joblib", "pyyaml",
+  "numpy", "pandas", "scikit-learn", "lightgbm>=4.3", "joblib", "pyyaml",
   "fastapi", "uvicorn[standard]", "pydantic", "prometheus-client", "pyarrow", "websockets>=12",
 ]
 
