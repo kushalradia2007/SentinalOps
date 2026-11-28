@@ -343,3 +343,36 @@ def test_train_challenger_gives_recipes_the_timestamps(monkeypatch):
     champion = models.base.stamp(LOGIT.fit(ts.train, CFG), "spy_test", {})
     train_challenger(ts, CFG, champion=champion)
     assert "ts_ms" in seen["columns"] and "regime" in seen["columns"]
+
+
+# ---- evaluation layer: persistence gate, and the heal story for every candidate -------------------
+def test_gate_fails_when_challenger_loses_to_persistence(calm_model):
+    from sklearn.dummy import DummyClassifier
+
+    table = S.market([("calm", 120)], T0)
+    ts = assemble(table, T0 + 120 * MIN, CFG)
+    flat = DummyClassifier(strategy="prior").fit(ts.train[CFG.feature_names], ts.train["label"].astype(int))
+    report = evaluate_gates(calm_model[0], flat, ts, CFG)
+    gate = report.gates["beats_persistence"]
+    assert gate["passed"] is False and gate["value"] < 0 and not report.passed
+
+
+@pytest.mark.parametrize("name", ["gbm_v2", "lgbm_v1", "logit_v1"])
+def test_heal_story_with_each_candidate_installed(tmp_path, name):
+    from sentinalops import models
+    from sentinalops.labels import average_precision
+
+    calm_train, calm_test = make_ticks("calm", 20_000, seed=7), make_ticks("calm", 4_000, seed=8)
+    champion = models.get_recipe(name).fit(calm_train, CFG)
+    ap = average_precision(calm_test["label"].to_numpy(float),
+                           champion.predict_proba(calm_test[CFG.feature_names])[:, 1])
+    table = S.market([("calm", 90), ("volatile", 150)], T0)
+    reg, led = ModelRegistry(tmp_path / "reg"), Ledger(tmp_path / "l.sqlite")
+    c = C.HealController(CFG, led, reg, S.matured_table(table, 30))
+    c.bootstrap(champion, ap, T0)
+    steps = S.run(CFG, table, reg, led, c, step_minutes=5)
+    actions = [(int((s.now_ms - T0) / MIN), s.result.action) for s in steps]
+    assert all(a == "idle" for m, a in actions if m <= 90), actions
+    promoted = [s.result.version for s in steps if s.result.action == "retrained_promoted"]
+    assert promoted, actions
+    assert all(reg.meta(v)["model_name"] == name for v in promoted)

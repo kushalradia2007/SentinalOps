@@ -151,6 +151,11 @@ def evaluate_gates(champion, challenger, ts: TrainingSet, cfg: DomainConfig) -> 
     regression = champ["older"]["ap"] - chall["older"]["ap"]
     lift = chall["current"]["ap"] / base_rate if base_rate else math.nan
     brier_up = chall["current"]["brier"] - champ["current"]["brier"]
+    # The persistence bar ("the book is thinning, so stress is coming"): deterministic, fitted only
+    # on the training rows' own distributions, so the gate itself learns nothing.
+    persistence = get_recipe("persistence_v1").fit(ts.train, cfg) if len(ts.train) else None
+    persistence_ap = _score(persistence, ts.holdout, names)["ap"] if persistence is not None else math.nan
+    beats_persistence = chall["current"]["ap"] - persistence_ap
     older_known = not math.isnan(regression)
     gates = {
         "improves_current_regime": {"value": gain, "needed": f">= {h.min_gain}",
@@ -162,6 +167,8 @@ def evaluate_gates(champion, challenger, ts: TrainingSet, cfg: DomainConfig) -> 
                                      "passed": lift >= h.min_lift_over_baseline},
         "calibration_not_worse": {"value": brier_up, "needed": f"<= {h.max_brier_increase}",
                                   "passed": brier_up <= h.max_brier_increase},
+        "beats_persistence": {"value": beats_persistence, "needed": ">= 0 (AP minus persistence_v1 AP)",
+                              "passed": beats_persistence >= 0},
     }
     # NaN comparisons are False, so a gate with no data fails closed (except older regimes: none yet)
     passed = all(g["passed"] for g in gates.values())

@@ -43,6 +43,7 @@ Champion and challenger are scored on the same holdout. Every gate must pass, an
 | AP loss on older regimes at most | 0.10 |
 | Challenger AP at least this multiple of the base rate (the constant baseline until chunk 26) | 1.5 |
 | Brier score worse by at most | 0.01 |
+| Challenger AP at least that of `persistence_v1` (a fixed, fit-free "the book is thinning" score on the same holdout) | 0 |
 
 The report is saved as `reports/<version>.json` and `.md` next to the registry.
 
@@ -73,4 +74,4 @@ A second test force-promotes a bad model and checks it is rolled back after the 
 ## Not done yet
 
 - Prefect flow and schedule around `tick()` (42.1, 42.6), MLflow logging and registry (43.5, 32), Prometheus counters (45.4), drift scores as a warning input (42.2 with chunk 38).
-- Calibration of the challenger (31) and the chunk 26 persistence baseline in the gates.
+- MLflow logging of gate reports.
